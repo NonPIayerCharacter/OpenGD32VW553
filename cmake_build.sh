@@ -78,23 +78,6 @@ if ! type cmake >/dev/null 2>&1; then
     exit 1;
 fi
 
-if ! ldconfig -p | grep -q libncursesw.so.5; then
-    echo "#####################################################"
-    echo "Error:"
-    echo "Please run the following command to install the dependent libraries:"
-    echo "sudo apt-get install libncursesw5"
-    echo "#####################################################"
-    exit 1;
-fi
-
-if ! ldconfig -p | grep -q libncurses.so.5; then
-    echo "#####################################################"
-    echo "Error:"
-    echo "Please run the following command to install the dependent libraries:"
-    echo "sudo apt-get install libncurses5"
-    echo "#####################################################"
-    exit 1;
-fi
 
 if [[ ! -e cmake_build ]]; then
     mkdir cmake_build
