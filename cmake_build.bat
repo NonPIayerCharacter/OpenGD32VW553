@@ -57,7 +57,7 @@ if "%USER_CMD%"=="clean" (
     )
 ) else (
     :: Configure
-    cmake -G "Unix Makefiles" -DAPP=%app% -DCONFIG_BLE_FEATURE=MAX -DCONFIG_MBEDTLS_VERSION="3.6.2" -DCMAKE_TOOLCHAIN_FILE:PATH=./scripts/cmake/toolchain.cmake  ..
+    cmake -G "Unix Makefiles" -DAPP=%app% -DCONFIG_BLE_FEATURE=MAX -DCONFIG_MBEDTLS_VERSION="3.6.2" -DCMAKE_TOOLCHAIN_FILE:PATH=%CD%/../scripts/cmake/toolchain.cmake  ..
 
     :: Make
     make %USER_CMD%

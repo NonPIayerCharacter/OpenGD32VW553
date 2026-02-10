@@ -109,6 +109,7 @@ python %SYSTOOL% -t "SYS_SET" -c %CONFIG_FILE% %OUTPUT_PATH%\sysset.bin
 IF EXIST "%OUTPUT_PATH%\mbl-sign.bin"  del "%OUTPUT_PATH%\mbl-sign.bin"
 
 :: Add image header, ptlvs and concatenate the cert
+copy %TARGET%.bin "%OUTPUT_PATH%\%TARGET%.bin"
 
 if '%WITH_CERT%' == 'CERT' (
     python %IMGTOOL% sign --config %CONFIG_FILE% ^
@@ -151,12 +152,13 @@ if "%AESK%" == ""  (
             -i %OUTPUT_PATH%\mbl-sys-pad.bin ^
             -o %OUTPUT_PATH%\mbl-sys%AES_SUFFIX%.bin ^
             -k %AESK%
-    python %HEXTOOL% -c %CONFIG_FILE% ^
-            -t "SYS_SET" ^
-            -e %SREC_CAT% ^
-            %OUTPUT_PATH%\mbl-sys%AES_SUFFIX%.bin ^
-            %OUTPUT_PATH%\mbl-sys.hex
+::    python %HEXTOOL% -c %CONFIG_FILE% ^
+::            -t "SYS_SET" ^
+::            -e %SREC_CAT% ^
+::            %OUTPUT_PATH%\mbl-sys%AES_SUFFIX%.bin ^
+::            %OUTPUT_PATH%\mbl-sys.hex
     del "%OUTPUT_PATH%\mbl-sys-pad.bin"
+
     echo Encrypted!
 )
 

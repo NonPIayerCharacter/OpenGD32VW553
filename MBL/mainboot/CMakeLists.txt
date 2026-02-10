@@ -66,7 +66,7 @@ target_link_options(${TARGET_EXE}
 
 if(${CMAKE_HOST_WIN32})
     add_custom_command(TARGET ${TARGET_EXE} POST_BUILD
-        COMMAND cd ${TARGET_PROJECT_DIR}/cmake/bin && ../../mbl_afterbuild.bat ${CROSS_COMPILE}- ${PROJECT_SOURCE_DIR} ECDSA256 CERT ${PROJECT_SOURCE_DIR}/tools/xpack-openocd-0.11.0-3_windows/bin  00ffeeddccbbaa998877665544332211
+        COMMAND cmd /c "cd /d ${TARGET_PROJECT_DIR}/cmake/bin && call ../../mbl_afterbuild.bat ${CROSS_COMPILE}- ${PROJECT_SOURCE_DIR} ECDSA256 CERT ${PROJECT_SOURCE_DIR}/tools/xpack-openocd-0.11.0-3_windows/bin  00ffeeddccbbaa998877665544332211"
         COMMENT "Building ${TARGET_EXE}"
     )
 elseif(${CMAKE_HOST_UNIX})

@@ -79,7 +79,7 @@ else
     fi
 
     # Add image header, ptlvs and concatenate the cert
-
+    cp ${TARGET}.bin ${OUTPUT_PATH}/${TARGET}.bin
     if [[ ${WITH_CERT} = "CERT" ]];then
         python ${IMGTOOL} sign --config ${CONFIG_FILE} \
                         -k ${MBL_KEY} \
@@ -126,11 +126,11 @@ else
                 -i ${OUTPUT_PATH}/mbl-sys-pad.bin \
                 -o ${OUTPUT_PATH}/mbl-sys${AES_SUFFIX}.bin \
                 -k ${AESK}
-        python ${HEXTOOL} -c ${CONFIG_FILE} \
-                -t "SYS_SET" \
-                -e ${SREC_CAT} \
-                ${OUTPUT_PATH}/mbl-sys${AES_SUFFIX}.bin \
-                ${OUTPUT_PATH}/mbl-sys.hex
+#        python ${HEXTOOL} -c ${CONFIG_FILE} \
+#                -t "SYS_SET" \
+#                -e ${SREC_CAT} \
+#                ${OUTPUT_PATH}/mbl-sys${AES_SUFFIX}.bin \
+#                ${OUTPUT_PATH}/mbl-sys.hex
         rm ${OUTPUT_PATH}/mbl-sys-pad.bin
         echo Encrypted!
     fi

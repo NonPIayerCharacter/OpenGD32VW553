@@ -119,6 +119,11 @@ if [[ ${mbl_offset} = "0x0" ]];then
     fi
 
 else
+    if [[ ${rftest_on} = 1 ]];then
+        cp ${TARGET}.bin "${OUTPUT_PATH}/rftest.bin"
+    else
+        cp ${TARGET}.bin "${OUTPUT_PATH}/${TARGET}.bin"
+    fi
 
     if [[ -e ${OUTPUT_PATH}/image-ota-sign.bin ]]; then
         rm ${OUTPUT_PATH}/image-ota-sign.bin

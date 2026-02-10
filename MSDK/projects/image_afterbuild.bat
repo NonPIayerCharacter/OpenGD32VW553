@@ -164,7 +164,13 @@ if "%mbl_offset%" == "0x0"  (
     echo Goto download!
     goto download
 )
-
+if "%mbl_offset%" == "0x1000"  (
+    if %rftest_on% == 1 (
+        copy %TARGET%.bin "%OUTPUT_PATH%\\rftest.bin"
+    )  else (
+        copy %TARGET%.bin "%OUTPUT_PATH%\\%TARGET%.bin" /Y
+    )
+)
 if exist %OUTPUT_PATH%\image-ota-sign.bin del %OUTPUT_PATH%\image-ota-sign.bin
 
 if '%WITH_CERT%' == 'CERT' (
