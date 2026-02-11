@@ -29,7 +29,7 @@ fi
 MBL_KEY=${ROOT}/scripts/certs/${ALGO_SIGN}/mbl-key.pem
 ROTPK=${ROOT}/scripts/certs/${ALGO_SIGN}/rot-key.pem
 MBL_CERT=${ROOT}/scripts/certs/${ALGO_SIGN}/mbl-cert.pem
-CONFIG_FILE=../../config/config_gdm32.h
+CONFIG_FILE=${ROOT}/config/config_gdm32.h
 SYSTOOL=${ROOT}/scripts/imgtool/sysset.py
 IMGTOOL=${ROOT}/scripts/imgtool/imgtool.py
 HEXTOOL=${ROOT}/scripts/imgtool/hextool.py
@@ -85,7 +85,7 @@ else
                         -k ${MBL_KEY} \
                         ${KEY_PASSPHRASE} \
                         -t "MBL" \
-                        --algo_hash "%ALGO_HASH%" \
+                        --algo_hash "${ALGO_HASH}" \
                         --algo_sig "${ALGO_SIGN}" \
                         --cert ${MBL_CERT} \
                         --cert_key ${ROTPK} \
@@ -95,13 +95,13 @@ else
                         -k ${ROTPK} \
                         ${KEY_PASSPHRASE} \
                         -t "MBL" \
-                        --algo_hash "%ALGO_HASH%" \
+                        --algo_hash "${ALGO_HASH}" \
                         --algo_sig "${ALGO_SIGN}" \
                         ${TARGET}.bin ${OUTPUT_PATH}/mbl-sign.bin
     fi
 
     python ${GENTOOL} --config ${CONFIG_FILE} \
-                    --sys_${OUTPUT_PATH}/sysset.bin \
+                    --sys_set ${OUTPUT_PATH}/sysset.bin \
                     --mbl ${OUTPUT_PATH}/mbl-sign.bin \
                     -o ${OUTPUT_PATH}/mbl-sys.bin
     if [[ -e ${OUTPUT_PATH}/sysset.bin ]]; then
