@@ -15,6 +15,20 @@
             "cStandard": "c11",
             "cppStandard": "c++17",
             "compileCommands": "${workspaceFolder}/cmake_build/compile_commands.json"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_DEBUG"
+            ],
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "${workspaceFolder}/tools/gd32vw55x_toolchain_linux/bin/riscv-nuclei-elf-gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "compileCommands": "${workspaceFolder}/cmake_build/compile_commands.json"
         }
     ],
     "version": 4

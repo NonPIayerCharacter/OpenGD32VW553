@@ -4,11 +4,16 @@
         {
             "label": "Build MSDK",
             "type": "shell",
-            "command": "${workspaceFolder}/cmake_build.bat",
             "args": [
                 "app",
                 "msdk"
             ],
+            "windows": {
+                "command": "${workspaceFolder}/cmake_build.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/cmake_build.sh"
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -26,11 +31,16 @@
         {
             "label": "Build MBL",
             "type": "shell",
-            "command": "${workspaceFolder}/cmake_build.bat",
             "args": [
                 "app",
                 "mbl"
             ],
+            "windows": {
+                "command": "${workspaceFolder}/cmake_build.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/cmake_build.sh"
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -48,10 +58,15 @@
         {
             "label": "Build ALL",
             "type": "shell",
-            "command": "${workspaceFolder}/cmake_build.bat",
             "args": [
                 "app"
             ],
+            "windows": {
+                "command": "${workspaceFolder}/cmake_build.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/cmake_build.sh"
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -69,11 +84,16 @@
         {
             "label": "Clean ALL",
             "type": "shell",
-            "command": "${workspaceFolder}/cmake_build.bat",
             "args": [
                 "app",
                 "clean"
             ],
+            "windows": {
+                "command": "${workspaceFolder}/cmake_build.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/cmake_build.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -85,8 +105,13 @@
         {
             "label": "Download MSDK (GDLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["MSDK", "GDLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -100,8 +125,13 @@
         {
             "label": "Download MBL (GDLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["MBL", "GDLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -115,8 +145,13 @@
         {
             "label": "Download ALL (GDLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["ALL", "GDLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -130,8 +165,13 @@
         {
             "label": "Download MSDK (JLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["MSDK", "JLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -145,8 +185,13 @@
         {
             "label": "Download MBL (JLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["MBL", "JLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -160,8 +205,13 @@
         {
             "label": "Download ALL (JLink)",
             "type": "shell",
-            "command": "${workspaceFolder}\\.vscode\\download.bat",
             "args": ["ALL", "JLink"],
+            "windows": {
+                "command": "${workspaceFolder}/.vscode/download.bat"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/.vscode/download.sh"
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -175,11 +225,20 @@
         {
             "label": "Start OpenOCD (GDLink)",
             "type": "shell",
-            "command": "cmd",
-            "args": [
-                "/c",
-                "\"${workspaceFolder}\\tools\\xpack-openocd-0.11.0-3_windows\\bin\\openocd.exe\" -f \"${workspaceFolder}\\MSDK\\projects\\eclipse\\msdk\\openocd_gdlink.cfg\""
-            ],
+            "windows": {
+                "command": "cmd",
+                "args": [
+                    "/c",
+                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg\""
+                ]
+            },
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg\""
+                ]
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -204,11 +263,20 @@
         {
             "label": "Start OpenOCD (JLink)",
             "type": "shell",
-            "command": "cmd",
-            "args": [
-                "/c",
-                "\"${workspaceFolder}\\tools\\xpack-openocd-0.11.0-3_windows\\bin\\openocd.exe\" -f \"${workspaceFolder}\\MSDK\\projects\\eclipse\\msdk\\openocd_jlink.cfg\""
-            ],
+            "windows": {
+                "command": "cmd",
+                "args": [
+                    "/c",
+                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg\""
+                ]
+            },
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg\""
+                ]
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",

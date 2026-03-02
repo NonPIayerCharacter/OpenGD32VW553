@@ -21,6 +21,11 @@ RUN apt-get update && apt-get install -y \
 
 # install python crypto library without caching to reduce image size
 RUN pip3 install --no-cache-dir pycryptodome
+RUN pip3 install --no-cache-dir cbor
+RUN pip3 install --no-cache-dir cryptography
+RUN pip3 install --no-cache-dir pycryptodome
+RUN pip3 install --no-cache-dir pyasn1
+RUN pip3 install --no-cache-dir intelhex
 
 # argument for SDK repo url; default is official github mirror
 ARG GD32VW55X_SDK_URL=https://github.com/GigaDeviceSemiconductor/GD32VW55x_WiFi_BLE_SDK.git

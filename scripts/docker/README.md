@@ -25,7 +25,7 @@ When launching the container, you must mount the SDK source directory (default p
 
 For example, SDK source directory is ~/linux_work/github/GD32VW55x_WiFi_BLE_SDK.
 ```bash
-docker run --rm -it -v ~/linux_work/github/GD32VW55x_WiFi_BLE_SDK:/project gd32vw553-dev:v1
+sudo docker run --rm --privileged -it -v /dev/bus/usb:/dev/bus/usb -v ~/linux_work/github/GD32VW55x_WiFi_BLE_SDK:/project gd32vw553-dev:v1
 ```
 
 ## Parameters explained:

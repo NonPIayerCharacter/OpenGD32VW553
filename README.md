@@ -36,7 +36,10 @@ C:\Program Files\CMake\bin
 #### Ubuntu
 1. System requirement: Ubuntu 18.04 or newer
 2. Install any missing packages following the build instructions below
-
+3. Debugger Permissions Setup for Ubuntu
+```bash
+./scripts/setup_debugger_env.sh
+```
 ### Build Steps
 1. Enter SDK root directory
 

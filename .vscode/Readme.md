@@ -15,22 +15,31 @@
 📦gd32vw553-release-sdk/
 ├── 📁.vscode/                                  # 编译、下载、调试脚本                  
 │   ├── download.bat
+│   ├── download.sh
 │   ├── launch.json
 │   ├── settings.json
 │   ├── tasks.json
 │   └── Readme.md                               # 本说明文件
-├── 📁tools/                                     # 工具链 & Openocd
-│   ├── gd32vw55x_toolchain_windows.7z.001
+├── 📁tools/
+│   ├── gd32vw55x_toolchain_windows.7z.001      # windows 工具链 & Openocd
 │   ├── gd32vw55x_toolchain_windows.7z.002
 │   ├── gd32vw55x_toolchain_windows.7z.003
-│   └──xpack-openocd-0.11.0-3_windows.7z
+│   ├── xpack-openocd-0.11.0-3_windows.7z
+│   ├── gd32vw55x_toolchain_linux.tar.gz00      # linux 工具链 & Openocd
+│   ├── gd32vw55x_toolchain_linux.tar.gz01
+│   ├── gd32vw55x_toolchain_linux.tar.gz02
+│   ├── gd32vw55x_toolchain_linux.tar.gz03
+│   ├── gd32vw55x_toolchain_linux.tar.gz04
+│   ├── gd32vw55x_toolchain_linux.tar.gz05
+│   ├── gd32vw55x_toolchain_linux.tar.gz06
+│   └── xpack-openocd-0.11.0-3_linux.tar.gz
 ├── MBL/                                         # Release SDK 文件
 ├── MSDK/
 ├── ...
 ```
 
 
-使用 VSCode打开GD32VW553 Release SDK。
+使用 VSCode 打开GD32VW553 Release SDK。
 
 # 编译 MSDK
 
@@ -80,7 +89,7 @@
 
 # 下载指定bin文件
 
-参考download.bat中下载文件方法。
+参考download.bat/download.sh中下载文件方法。
 
 根据下载方式不同选在不同的Config File，以及指定待烧录的bin文件路径和烧录至Flash Address。
 

@@ -1,8 +1,6 @@
 {
     "C_Cpp.default.cStandard": "c11",
     "C_Cpp.default.cppStandard": "c++11",
-    "C_Cpp.default.compilerPath": "${workspaceFolder}/tools/gd32vw55x_toolchain_windows/bin/riscv-nuclei-elf-gcc.exe",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/cmake_build/compile_commands.json",
     "C_Cpp.errorSquiggles": "enabled",
     "files.exclude": {
         "**/.git": true,
