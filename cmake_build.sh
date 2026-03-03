@@ -17,28 +17,33 @@ if [[ ! -e $PWD/MSDK/${APP} ]]; then
     exit 1
 fi
 
-if [[ ! -e ./tools/gd32vw55x_toolchain_linux ]]; then
-    if [[ -e ./tools/gd32vw55x_toolchain_linux.tar.gz00 ]]; then
-        echo "Unzip gd32vw55x toolchain ......."
-#        tar xvzf ./tools/gd32vw55x_toolchain_linux.tar.gz -C ./tools
-        cat ./tools/gd32vw55x_toolchain_linux.tar.gz* | tar xvz -C ./tools/
-    else
-        echo "toolchain error: $PWD/tools/gd32vw55x_toolchain_linux.tar.gz00 is not exsit!"
-        exit 1
+if ! type riscv-nuclei-elf-gcc > /dev/null 2>&1; then
+    if [[ ! -e ./tools/gd32vw55x_toolchain_linux ]]; then
+        if [[ -e ./tools/gd32vw55x_toolchain_linux.tar.gz00 ]]; then
+            echo "Unzip gd32vw55x toolchain ......."
+    #        tar xvzf ./tools/gd32vw55x_toolchain_linux.tar.gz -C ./tools
+            cat ./tools/gd32vw55x_toolchain_linux.tar.gz* | tar xvz -C ./tools/
+        else
+            echo "Please download the gd32vw55x toolchain from the website and put it in $PATH"
+            exit 1
+        fi
     fi
+    export PATH=$PATH:$PWD/tools/gd32vw55x_toolchain_linux/bin
 fi
 
-if [[ ! -e ./tools/xpack-openocd-0.11.0-3_linux ]]; then
-    if [[ -e ./tools/xpack-openocd-0.11.0-3_linux.tar.gz ]]; then
-        echo "Unzip gd32vw55x opencod ......."
-        tar xvzf ./tools/xpack-openocd-0.11.0-3_linux.tar.gz -C ./tools
-    else
-        echo "openocd error: $PWD/tools/xpack-openocd-0.11.0-3_linux.tar.gz is not exsit!"
-        exit 1
+if ! type openocd > /dev/null 2>&1; then
+    if [[ ! -e ./tools/xpack-openocd-0.11.0-3_linux ]]; then
+        if [[ -e ./tools/xpack-openocd-0.11.0-3_linux.tar.gz ]]; then
+            echo "Unzip gd32vw55x opencod ......."
+            tar xvzf ./tools/xpack-openocd-0.11.0-3_linux.tar.gz -C ./tools
+        else
+            echo "Please download the gd32vw55x opencod from the website and put it in $PATH"
+            exit 1
+        fi
     fi
+    export PATH=$PATH:$PWD/tools/xpack-openocd-0.11.0-3_linux/bin
 fi
 
-export PATH=$PATH:$PWD/tools/gd32vw55x_toolchain_linux/bin
 
 if type python3 > /dev/null 2>&1; then
     PYTHON=python3

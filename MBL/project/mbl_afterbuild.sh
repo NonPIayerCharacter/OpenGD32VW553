@@ -137,8 +137,8 @@ else
 fi
 
 OPENOCD="${OPENOCD_PATH}/openocd"
-LINKCFG="${OPENOCD_PATH}/openocd_gdlink_gd32103.cfg"
-#LINKCFG="${OPENOCD_PATH}/openocd_gdlink_gd32103_jlink.cfg"
+LINKCFG="../../openocd_gdlink.cfg"
+#LINKCFG="../../openocd_jlink.cfg"
 
 #${OPENOCD} -f ${LINKCFG} -c "program ${DOWNLOAD_BIN} 0x08000000 verify exit;"
 echo "Download image use the follow command: "

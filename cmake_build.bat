@@ -18,31 +18,36 @@ IF NOT EXIST "%CD%\MSDK\%APP%" (
     EXIT /B 1
 )
 
+where riscv-nuclei-elf-gcc >NUL 2>&1
 
-IF NOT EXIST "%CD%\tools\gd32vw55x_toolchain_windows" (
-    IF EXIST "%CD%\tools\gd32vw55x_toolchain_windows.7z.001" (
-        echo Unzipping gd32vw55x toolchain .......
-        "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\gd32vw55x_toolchain_windows.7z.001" -o"%CD%\tools"
-    ) ELSE (
-        echo toolchain error: %CD%\tools\gd32vw55x_toolchain_windows.7z.001 is not exist!
-        EXIT /B 1
+if ERRORLEVEL 1 (
+    IF NOT EXIST "%CD%\tools\gd32vw55x_toolchain_windows" (
+        IF EXIST "%CD%\tools\gd32vw55x_toolchain_windows.7z.001" (
+            echo Unzipping gd32vw55x toolchain .......
+            "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\gd32vw55x_toolchain_windows.7z.001" -o"%CD%\tools"
+        ) ELSE (
+            echo "Please download the gd32vw55x toolchain from the website and put it in PATH"
+            EXIT /B 1
+        )
     )
+    SET "PATH=%PATH%;%CD%\tools\gd32vw55x_toolchain_windows\bin"
 )
 
 
-IF NOT EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows" (
-    IF EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" (
-        echo Unzipping gd32vw55x OpenOCD .......
-        "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" -o"%CD%\tools"
-    ) ELSE (
-        echo openocd error: %CD%\tools\xpack-openocd-0.11.0-3_windows.7z is not exist!
-        EXIT /B 1
+where openocd >NUL 2>&1
+
+if ERRORLEVEL 1 (
+    IF NOT EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows" (
+        IF EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" (
+            echo Unzipping gd32vw55x OpenOCD .......
+            "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" -o"%CD%\tools"
+        ) ELSE (
+            echo "Please download the gd32vw55x OpenOCD from the website and put it in PATH"
+            EXIT /B 1
+        )
     )
+    SET "PATH=%PATH%;%CD%\tools\xpack-openocd-0.11.0-3_windows\bin"
 )
-
-
-SET PATH=%PATH%;%CD%\tools\gd32vw55x_toolchain_windows\bin
-
 
 
 if NOT EXIST cmake_build (

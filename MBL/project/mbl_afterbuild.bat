@@ -164,8 +164,8 @@ if "%AESK%" == ""  (
 
 :download
 set OPENOCD="%OPENOCD_PATH%\\openocd.exe"
-::set LINKCFG="..\\openocd_gdlink.cfg"
-set LINKCFG="..\\openocd_jlink.cfg"
+::set LINKCFG="..\\..\\openocd_gdlink.cfg"
+set LINKCFG="..\\..\\openocd_jlink.cfg"
 @echo on
 ::%OPENOCD% -f %LINKCFG% -c "program %DOWNLOAD_BIN% 0x08000000 verify exit;"
 :end

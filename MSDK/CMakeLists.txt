@@ -138,7 +138,7 @@ if(${CMAKE_HOST_WIN32})
         COMMAND  ${CMAKE_OBJDUMP} --source --all-headers --demangle --line-numbers --wide ${TARGET_EXE}.elf > ${TARGET_EXE}.lst
         COMMAND  ${CMAKE_OBJCOPY} -O ihex  ${TARGET_EXE}.elf  ${TARGET_EXE}.hex
         COMMAND  ${CMAKE_OBJCOPY} -O binary  ${TARGET_EXE}.elf  ${TARGET_EXE}.bin
-        COMMAND  ${TARGET_PROJECT_DIR}/image_afterbuild.bat ${CROSS_COMPILE}- ECDSA256 CERT ${PROJECT_SOURCE_DIR}/tools/xpack-openocd-0.11.0-3_windows/bin ${PROJECT_SOURCE_DIR} ""
+        COMMAND  ${TARGET_PROJECT_DIR}/image_afterbuild.bat ${CROSS_COMPILE}- ECDSA256 CERT ${OPENOCD_DIR} ${PROJECT_SOURCE_DIR} ""
         WORKING_DIRECTORY "${TARGET_PROJECT_DIR}/cmake/output/bin"
         COMMENT "Building ${TARGET_EXE}"
     )
@@ -150,7 +150,7 @@ elseif(${CMAKE_HOST_UNIX})
         COMMAND  cd ${TARGET_PROJECT_DIR}/cmake/output/bin && ${CMAKE_OBJDUMP} --source --all-headers --demangle --line-numbers --wide ${TARGET_EXE}.elf > ${TARGET_EXE}.lst
         COMMAND  cd ${TARGET_PROJECT_DIR}/cmake/output/bin && ${CMAKE_OBJCOPY} -O ihex  ${TARGET_EXE}.elf  ${TARGET_EXE}.hex
         COMMAND  cd ${TARGET_PROJECT_DIR}/cmake/output/bin && ${CMAKE_OBJCOPY} -O binary  ${TARGET_EXE}.elf  ${TARGET_EXE}.bin
-        COMMAND  cd ${TARGET_PROJECT_DIR}/cmake/output/bin && ${TARGET_PROJECT_DIR}/image_afterbuild.sh  ${CROSS_COMPILE}- ECDSA256 CERT ${PROJECT_SOURCE_DIR}/tools/xpack-openocd-0.11.0-3_linux/bin ${PROJECT_SOURCE_DIR} \"\"
+        COMMAND  cd ${TARGET_PROJECT_DIR}/cmake/output/bin && ${TARGET_PROJECT_DIR}/image_afterbuild.sh  ${CROSS_COMPILE}- ECDSA256 CERT ${OPENOCD_DIR} ${PROJECT_SOURCE_DIR} \"\"
         COMMENT "Building ${TARGET_EXE}"
     )
 else()
