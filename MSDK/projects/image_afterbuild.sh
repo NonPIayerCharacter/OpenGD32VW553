@@ -171,8 +171,8 @@ else
 fi
 
 OPENOCD="${OPENOCD_PATH}/openocd"
-LINKCFG="../../../openocd_gdlink.cfg"
-#LINKCFG="../../../openocd_jlink.cfg"
+LINKCFG="${cur_dir}/../openocd_gdlink.cfg"
+#LINKCFG="${cur_dir}/../openocd_jlink.cfg"
 
 #${OPENOCD} -f ${LINKCFG} -c "program ${DOWNLOAD_BIN} 0x0800A000 verify reset exit;"
 
