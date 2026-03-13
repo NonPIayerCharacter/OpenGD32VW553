@@ -4,6 +4,9 @@
 # TARGET: MSDK, MBL, ALL
 # DEBUGGER: GDLink, JLink
 
+# set custom OpenOCD path
+# export OPENOCD_PATH=/path/to/openocd/bin
+
 set -e
 
 TARGET="${1:-MSDK}"
@@ -12,6 +15,33 @@ DEBUGGER="${2:-GDLink}"
 # Get the script directory and workspace directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# OpenOCD check and setup
+# Check for custom OpenOCD path first
+if [[ -n "$OPENOCD_PATH" ]]; then
+    if [[ -d "$OPENOCD_PATH" ]]; then
+        echo "Using custom OpenOCD path: $OPENOCD_PATH"
+        export PATH=$PATH:$OPENOCD_PATH
+    fi
+fi
+
+# Check if OpenOCD is found in PATH
+if type openocd > /dev/null 2>&1; then
+    echo "OpenOCD found in PATH: $(which openocd)"
+else
+    # Check if OpenOCD is found in local tools
+    if [[ ! -d "${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux/bin" ]]; then
+        if [[ -f "${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux.tar.gz" ]]; then
+            echo "Extracting gd32vw55x OpenOCD ......."
+            tar xzf "${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux.tar.gz" -C "${WORK_DIR}/tools"
+        else
+            echo "Error: Please download the gd32vw55x OpenOCD from the website and put it in PATH"
+            exit 1
+        fi
+    fi
+    echo "Using OpenOCD path: ${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux/bin"
+    export PATH=$PATH:${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux/bin
+fi
 
 # Validate target
 if [[ ! "$TARGET" =~ ^(MSDK|MBL|ALL)$ ]]; then
@@ -72,7 +102,7 @@ echo "Config: $CONFIG_FILE"
 echo ""
 
 # Run OpenOCD with appropriate config
-if ${WORK_DIR}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd -f "$CONFIG_FILE" \
+if openocd -f "$CONFIG_FILE" \
     -c "init" \
     -c "program $BIN_FILE $FLASH_ADDR verify reset" \
     -c "exit"; then

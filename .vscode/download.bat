@@ -9,6 +9,42 @@ setlocal enabledelayedexpansion
 set TARGET=%1
 set DEBUGGER=%2
 
+REM set custom OpenOCD path
+::set OPENOCD_PATH=path/to/openocd/bin
+
+REM OpenOCD check and setup
+:: Check for custom OpenOCD path first
+if NOT "%OPENOCD_PATH%"=="" (
+    if EXIST "%OPENOCD_PATH%" (
+        echo Using custom OpenOCD path: %OPENOCD_PATH%
+        SET "PATH=%PATH%;%OPENOCD_PATH%"
+        goto openocd_done
+    )
+)
+
+:: Check if OpenOCD is found in PATH
+where openocd >NUL 2>&1
+
+:: Check if OpenOCD is found in %CD%\tools
+if ERRORLEVEL 1 (
+    IF NOT EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows" (
+        IF EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" (
+            echo Unzipping gd32vw55x OpenOCD .......
+            "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" -o"%CD%\tools"
+        ) ELSE (
+            echo "Please download the gd32vw55x OpenOCD from the website and put it in PATH"
+            EXIT /B 1
+        )
+    )
+    SET "PATH=%PATH%;%CD%\tools\xpack-openocd-0.11.0-3_windows\bin"
+) else (
+    for /f "delims=" %%i in ('where openocd') do (
+        echo OpenOCD found in PATH: %%i
+    )
+)
+
+:openocd_done
+
 REM Default to MSDK if target not specified
 if "%TARGET%"=="" set TARGET=MSDK
 REM Default to GDLink if debugger not specified
@@ -62,7 +98,7 @@ echo Flash Address: %FLASH_ADDR%
 echo.
 
 REM Run OpenOCD with appropriate config
-"!WORK_DIR!\tools\xpack-openocd-0.11.0-3_windows\bin\openocd.exe" -f "!CONFIG_FILE!" -c "init" -c "program !BIN_FILE! %FLASH_ADDR% verify reset" -c "exit"
+"openocd.exe" -f "!CONFIG_FILE!" -c "init" -c "program !BIN_FILE! %FLASH_ADDR% verify reset" -c "exit"
 
 if errorlevel 1 (
     echo.
