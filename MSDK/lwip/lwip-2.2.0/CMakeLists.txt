@@ -68,11 +68,10 @@ set(lwipnetif_SRCS
 
 # AppFiles
 
-#[[
 set(lwipapp_SRCS
-    ${LWIP_DIR}/apps/ping/ping.c
+    ${LWIP_DIR}/src/apps/sntp/sntp.c
 )
-]]
+
 
 target_sources(lwIP
     PRIVATE
@@ -81,7 +80,7 @@ target_sources(lwIP
         ${lwipapi_SRCS}
         ${lwipnetif_SRCS}
         ${lwipport_SRCS}
-#        ${lwipapp_SRCS}
+        ${lwipapp_SRCS}
 )
 
 target_include_directories(lwIP_api
