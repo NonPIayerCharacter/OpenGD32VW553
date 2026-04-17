@@ -70,6 +70,10 @@ set(lwipnetif_SRCS
 
 set(lwipapp_SRCS
     ${LWIP_DIR}/src/apps/sntp/sntp.c
+    ${LWIP_DIR}/src/apps/mqtt/mqtt.c
+    ${LWIP_DIR}/src/apps/mqtt/mqtt5.c
+    ${LWIP_DIR}/src/apps/altcp_tls/altcp_tls_mbedtls_mem.c
+    ${LWIP_DIR}/src/apps/altcp_tls/altcp_tls_mbedtls.c
 )
 
 
@@ -95,6 +99,8 @@ target_include_directories(lwIP_api
 target_include_directories(lwIP
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/port/arch>
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/MSDK/app/mqtt_app
 )
 
 target_link_libraries(lwIP
@@ -104,6 +110,7 @@ target_link_libraries(lwIP
     wifi_mgmt_api
     riscv_api
     util_api
+    mbedtls_api
 )
 
 add_lib_api(lwIP_api)
