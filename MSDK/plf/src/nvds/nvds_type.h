@@ -58,7 +58,7 @@ OF SUCH DAMAGE.
 #endif
 
 // NVDS size in FLASH (4*4KB = 16KBytes)
-#define NVDS_FLASH_INTERNAL_SIZE        (0x4000)
+#define NVDS_FLASH_INTERNAL_SIZE        (RE_END_OFFSET - RE_NVDS_DATA_OFFSET - 0x1000)
 
 // Support encryped nvds
 // #define NVDS_FLASH_ENCRYPTED_SUPPORT
