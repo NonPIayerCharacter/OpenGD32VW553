@@ -839,9 +839,9 @@ int wifi_netlink_ap_start(int vif_idx, struct ap_cfg *cfg)
     ip_cfg.ip6_mode = IP6_ADDR_SERVER;
 #endif
     ip_cfg.default_output = true;
-    ip_cfg.ipv4.addr = PP_HTONL(LWIP_MAKEU32(192, 168, 237, 1));
+    ip_cfg.ipv4.addr = PP_HTONL(LWIP_MAKEU32(192, 168, 4, 1));
     ip_cfg.ipv4.mask = PP_HTONL(LWIP_MAKEU32(255, 255, 255, 0));
-    ip_cfg.ipv4.gw = PP_HTONL(LWIP_MAKEU32(192, 168, 237, 1));
+    ip_cfg.ipv4.gw = PP_HTONL(LWIP_MAKEU32(192, 168, 4, 1));
     wifi_set_vif_ip(vif_idx, &ip_cfg);
 
     /* 4. Set mac vif state */

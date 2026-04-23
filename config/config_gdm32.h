@@ -49,13 +49,13 @@ OF SUCH DAMAGE.
 #define RE_SYS_STATUS_OFFSET    0x8000          /* !Keep unchanged! */
 #define RE_IMG_0_OFFSET         0xA000          /* !Keep unchanged! */
 #define RE_IMG_1_OFFSET         0x1EA000
-#define RE_IMG_1_END            0x3CA000        /* reserved 196KB for user data */
-#define RE_NVDS_DATA_OFFSET     0x3FB000        /* reserved 20KB for nvds data */
+#define RE_IMG_1_END            0x3CA000        /* reserved 156KB for user data */
+#define RE_NVDS_DATA_OFFSET     0x3F1000        /* reserved 60KB for nvds data */
 #define RE_END_OFFSET           0x400000        /* equal to flash total size */
 
 /* FW_VERSION */
 #define RE_MBL_VERSION          0x01000003
 #define RE_IMG_VERSION          0x10003004     /* SDK Version (24 bits) + Customer Version (12 bits)*/
-#define RE_CUSTOMER_NAME        "GIGA"
+#define RE_CUSTOMER_NAME        "OBK"
 
 #endif   // __CONFIG_GDM32_H__

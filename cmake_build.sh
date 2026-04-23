@@ -92,7 +92,7 @@ cd cmake_build
 if [[ $USER_CMD = "clean" ]];then
     rm ./* -rf
 else
-    cmake -G "Unix Makefiles" -DAPP=${APP} -DCONFIG_BLE_FEATURE=MAX -DCONFIG_MBEDTLS_VERSION="3.6.2" -DCMAKE_TOOLCHAIN_FILE:PATH=./scripts/cmake/toolchain.cmake  ..
+    cmake -G "Unix Makefiles" -DAPP=${APP} -DCONFIG_MBEDTLS_VERSION="2.17.0" -DCMAKE_TOOLCHAIN_FILE:PATH=./scripts/cmake/toolchain.cmake  ..
 
     make ${USER_CMD}
 fi
