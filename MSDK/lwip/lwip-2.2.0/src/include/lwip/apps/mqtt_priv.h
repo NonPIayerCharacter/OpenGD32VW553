@@ -5,7 +5,6 @@
 
 /*
  * Copyright (c) 2016 Erik Andersson
- * Copyright (c) 2024, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -39,10 +38,6 @@
 #define LWIP_HDR_APPS_MQTT_PRIV_H
 
 #include "lwip/apps/mqtt.h"
-/* GD modified */
-#ifdef LWIP_MQTT
-#include "lwip/apps/mqtt5.h"
-/* GD modified end */
 #include "lwip/altcp.h"
 
 #ifdef __cplusplus
@@ -62,12 +57,6 @@ struct mqtt_request_t
   u16_t pkt_id;
   /** Expire time relative to element before this  */
   u16_t timeout_diff;
-/* GD modified */
-  /** need republish when packet send time out */
-  u8_t timeout_repub_symbol;
-
-  struct mqtt_pub_info_t *repub_info;
-/* GD modified end */
 };
 
 /** Ring buffer */
@@ -106,18 +95,10 @@ struct mqtt_client_s
   u8_t rx_buffer[MQTT_VAR_HEADER_BUFFER_LEN];
   /** Output ring-buffer */
   struct mqtt_ringbuf_t output;
-/* GD modified */
-#if LWIP_ALTCP && LWIP_ALTCP_TLS
-  /** TLS configuration for secure connections */
-  struct altcp_tls_config *tls_config;
-#endif
-  mqtt5_config_storage_t *mqtt5_config;
-  bool run;
-/* GD modified end */
 };
 
 #ifdef __cplusplus
 }
 #endif
-#endif /* LWIP_MQTT */
+
 #endif /* LWIP_HDR_APPS_MQTT_PRIV_H */

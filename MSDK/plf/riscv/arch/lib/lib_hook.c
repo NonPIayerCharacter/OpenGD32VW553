@@ -109,7 +109,7 @@ __attribute__ ((used)) void __malloc_unlock(void)
     sys_sched_unlock();
 }
 
-#ifdef TUYAOS_SUPPORT
+//#ifdef TUYAOS_SUPPORT
 __attribute__ ((used)) void *malloc(size_t size)
 {
     return sys_malloc(size);
@@ -145,4 +145,4 @@ __attribute__ ((used)) void *realloc_r(void *p, void* x, size_t sz)
 {
   return sys_realloc(x, sz);
 }
-#endif
+//#endif

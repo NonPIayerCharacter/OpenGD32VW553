@@ -70,7 +70,7 @@ add_subdirectory(util)
 add_subdirectory(wifi_manager)
 
 if (APP)
-    add_subdirectory(${APP})
+    add_subdirectory(${APP} app)
 else()
     add_subdirectory(app)
 endif()

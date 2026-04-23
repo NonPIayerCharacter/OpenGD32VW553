@@ -54,7 +54,7 @@ extern "C" {
 
 #ifdef CONFIG_MQTT
 #define LWIP_MQTT
-#define LWIP_SSL_MQTT
+//#define LWIP_SSL_MQTT
 #endif
 
 #ifdef CONFIG_IPV6_SUPPORT
