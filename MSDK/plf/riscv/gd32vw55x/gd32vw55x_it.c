@@ -242,7 +242,7 @@ void RTC_WKUP_IRQHandler(void)
     \param[out] none
     \retval     none
 */
-void EXTI5_9_IRQHandler(void)
+__attribute__((weak)) void EXTI5_9_IRQHandler(void)
 {
     sys_int_enter();                            /* Tell the OS that we are starting an ISR            */
 

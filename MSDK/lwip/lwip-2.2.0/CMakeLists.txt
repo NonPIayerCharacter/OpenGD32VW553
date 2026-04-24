@@ -72,6 +72,11 @@ set(lwipapp_SRCS
     ${LWIP_DIR}/apps/ping/ping.c
 )
 ]]
+set(lwipmdns_SRCS
+    ${LWIP_DIR}/src/apps/mdns/mdns.c
+    ${LWIP_DIR}/src/apps/mdns/mdns_domain.c
+    ${LWIP_DIR}/src/apps/mdns/mdns_out.c
+)
 
 target_sources(lwIP
     PRIVATE
@@ -81,6 +86,7 @@ target_sources(lwIP
         ${lwipnetif_SRCS}
         ${lwipport_SRCS}
 #        ${lwipapp_SRCS}
+        ${lwipmdns_SRCS}
 )
 
 
