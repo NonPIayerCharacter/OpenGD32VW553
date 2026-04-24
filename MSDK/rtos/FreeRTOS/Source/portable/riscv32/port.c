@@ -733,6 +733,9 @@ void vApplicationIdleHook( void )
     extern void trace_dma_print(void);
     trace_dma_print();
 
+    extern void isidle(void);
+    isidle();
+
     /* Clock calibration is performed only when the clock drift is greater than
      * configEXPECTED_IDLE_TIME_BEFORE_SLEEP.
      * Compensate for a maximum of 5 ticks at least every second. */

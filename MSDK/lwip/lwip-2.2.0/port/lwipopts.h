@@ -43,6 +43,9 @@ extern "C" {
 #include "macif_rx_def.h"
 
 // #define LWIP_DEBUG
+#define LWIP_NUM_NETIF_CLIENT_DATA      1
+#define LWIP_MDNS_RESPONDER             1
+#define SYS_TIMER_BUF_FOR_MQTT          8
 
 #ifdef CONFIG_NAPT
 #define IP_NAPT                     1
@@ -62,7 +65,6 @@ extern "C" {
 #define LWIP_IPV6_DHCP6               1
 #define IPV6_ADDR_STRING_LENGTH_MAX   40
 #endif
-
 #define NET_UDP_PBUF_REALLOC          1
 
 #define LWIP_NETIF_API                1

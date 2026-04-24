@@ -317,6 +317,12 @@ void *sys_task_create(void *static_tcb, const uint8_t *name, uint32_t *stack_bas
         }
     }
 
+    // mdns fixup
+    if(name != NULL && strcmp(name, "RX") == 0)
+    {
+        stack_size += 512;
+    }
+
     /* protect task creation and task wrapper pointer storing against inconsistency of them if preempted in the middle */
     vTaskSuspendAll();
     if (static_tcb != NULL && stack_base != NULL) {
