@@ -34,6 +34,7 @@ OF SUCH DAMAGE.
 
 #include "wifi_vif.h"
 #include "wifi_net_ip.h"
+#include <string.h>
 
 struct wifi_vif_tag wifi_vif_tab[CFG_VIF_NUM];
 
@@ -655,3 +656,99 @@ int wifi_vif_type_set(int vif_idx, enum wifi_vif_type wvif_type)
 }
 
 #endif /* CONFIG_WPA_SUPPLICANT */
+
+/*!
+    \brief      Set hostname of the STA
+    \param[in]  vif_idx: index of the wifi vif
+    \param[in]  hostname: pointer to the hostname
+    \param[out] none
+    \retval     0 on success and != 0 if error occurred.
+*/
+int wifi_vif_hostname_set(int vif_idx, const char *hostname)
+{
+    struct wifi_vif_tag *wvif;
+    size_t len;
+
+    if (vif_idx >= CFG_VIF_NUM || hostname == NULL) {
+        return -1;
+    }
+
+    wvif = &wifi_vif_tab[vif_idx];
+
+    if (wvif->wvif_type != WVIF_STA) {
+        return -1;
+    }
+
+    len = strlen(hostname);
+    if (len > WIFI_HOSTNAME_MAX_LEN) {
+        return -1;
+    }
+
+    // Save user-defined hostname
+    sys_memcpy(wvif->user_hostname, hostname, len);
+    wvif->user_hostname[len] = '\0';
+
+#if LWIP_NETIF_HOSTNAME
+    netif_set_hostname(&wvif->net_if, wvif->user_hostname);
+#endif
+    return 0;
+}
+
+/*!
+    \brief      Get hostname of the STA
+    \param[in]  vif_idx: index of the wifi vif
+    \param[out] none
+    \retval     Pointer to the hostname on success and NULL if error occurred.
+*/
+const char *wifi_vif_hostname_get(int vif_idx)
+{
+    struct wifi_vif_tag *wvif;
+
+    if (vif_idx >= CFG_VIF_NUM) {
+        return NULL;
+    }
+
+    wvif = &wifi_vif_tab[vif_idx];
+
+    if (wvif->wvif_type != WVIF_STA) {
+        return NULL;
+    }
+
+    // If user has set a custom hostname, return it
+    if (wvif->user_hostname[0] != '\0') {
+        return wvif->user_hostname;
+    }
+
+#if LWIP_NETIF_HOSTNAME
+    // Otherwise return the netif hostname
+    return netif_get_hostname(&wvif->net_if);
+#else
+    return NULL;
+#endif
+}
+
+/*!
+    \brief      Set softAP max connection limit (must be called before wifi_management_ap_start)
+    \param[in]  max_conn: maximum number of stations
+    \param[out] none
+    \retval     none
+*/
+int wifi_vif_ap_set_max_conn(int vif_idx, uint8_t max_conn)
+{
+    if (vif_idx >= CFG_VIF_NUM) {
+        return -1;
+    }
+
+    if (vif_idx == WIFI_VIF_INDEX_DEFAULT) {
+        if (max_conn <= CFG_STA_NUM) {
+            wifi_vif_tab[vif_idx].ap.cfg.max_conn = max_conn;
+            return 0;
+        }
+    } else {
+        if (max_conn < CFG_STA_NUM) {
+            wifi_vif_tab[vif_idx].ap.cfg.max_conn = max_conn;
+            return 0;
+        }
+    }
+    return -1;
+}

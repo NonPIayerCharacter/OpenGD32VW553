@@ -61,6 +61,11 @@ os_queue_t mgmt_wait_queue;
 #ifdef CFG_WIFI_CONCURRENT
 uint8_t wifi_concurrent_mode = 0;
 #endif
+uint16_t repeat_cnt = WIFI_MGMT_ROAMING_RETRY_LIMIT;
+uint16_t interval_sec_ms = WIFI_MGMT_ROAMING_RETRY_INTERVAL;
+uint32_t user_connect_timeout_ms = 0;
+typedef void (*ipv6_gl_got_callback_t)(int vif_idx);
+ipv6_gl_got_callback_t g_ipv6_gl_got_callback = NULL;
 /*============================ LOCAL VARIABLES ===============================*/
 
 /*============================ PROTOTYPES ====================================*/
@@ -271,11 +276,16 @@ static void mgmt_ipv6_polling(void *eloop_data, void *user_ctx)
 
     if (wifi_ipv6_is_got(sm->vif_idx)) {
         wifi_sm_printf(WIFI_SM_NOTICE, STATE_MACHINE_DEBUG_PREFIX ": IPv6 addr got %s\r\n", ip6addr_ntoa(ip_2_ip6(&net_if->ip6_addr[1])));
+        if (g_ipv6_gl_got_callback) {
+            g_ipv6_gl_got_callback(sm->vif_idx);
+            g_ipv6_gl_got_callback = NULL;
+        }
     } else if (net_if->rs_count) {
         eloop_timeout_register(WIFI_MGMT_IPV6_POLLING_INTERVAL, mgmt_ipv6_polling, sm, NULL);
     } else {
         wifi_sm_printf(WIFI_SM_NOTICE, STATE_MACHINE_DEBUG_PREFIX ": IPv6 addr got timeout!\r\n");
         wifi_ip6_unique_addr_set_invalid(net_if);
+        g_ipv6_gl_got_callback = NULL;
     }
 }
 #endif /* CONFIG_IPV6_SUPPORT */
@@ -324,6 +334,10 @@ static void mgmt_link_status_polling(void *eloop_data, void *user_ctx)
 {
     wifi_management_sm_data_t *sm = eloop_data;
     int ret = 0;
+    struct wifi_vif_tag *wvif = vif_idx_to_wvif(sm->vif_idx);
+
+    if (NULL == wvif)
+        return;
 
     if (sm->preroam_enable && sm->preroam_start) {
         int8_t rssi = macif_vif_sta_rssi_get(sm->vif_idx);
@@ -341,7 +355,7 @@ static void mgmt_link_status_polling(void *eloop_data, void *user_ctx)
             wifi_sm_printf(WIFI_SM_NOTICE, STATE_MACHINE_DEBUG_PREFIX ": Start polling scan [%u]\r\n", sm->polling_scan_count);
 #ifdef CFG_80211R
             if (sm->param) {
-                ret = wifi_netlink_scan_set_with_ssid(sm->vif_idx, (char *)sm->param, 0xFF);
+                ret = wifi_netlink_scan_set_with_ssid(sm->vif_idx, (char *)wvif->sta.cfg.ssid, 0xFF);
             } else {
                 ret = wifi_netlink_scan_set(sm->vif_idx, 0xFF);
             }
@@ -441,7 +455,7 @@ static void mgmt_connected_scan_done(wifi_management_sm_data_t *sm)
     }
 
 #ifdef CFG_80211R
-    if(ft_roaming) {
+    if (ft_roaming) {
         wifi_sm_printf(WIFI_SM_NOTICE, STATE_MACHINE_DEBUG_PREFIX ": try FT roaming to a better AP\r\n");
         sm->polling_scan_count = 0;
         eloop_timeout_cancel(mgmt_link_status_polling, ELOOP_ALL_CTX, ELOOP_ALL_CTX);
@@ -461,9 +475,10 @@ static void mgmt_connected_scan_done(wifi_management_sm_data_t *sm)
             }
             sys_memcpy(target_ap, &candidate, sizeof(struct mac_scan_result));
             wifi_sm_printf(WIFI_SM_INFO, STATE_MACHINE_DEBUG_PREFIX ": target AP found ("MAC_FMT")\r\n", MAC_ARG(candidate.bssid.array));
-            eloop_message_send(sm->vif_idx, WIFI_MGMT_EVENT_FT_ROAMING_CMD, 0,
-                    (uint8_t *)target_ap, sizeof(struct mac_scan_result));
-            sys_mfree(target_ap);
+            if (eloop_message_send(sm->vif_idx, WIFI_MGMT_EVENT_FT_ROAMING_CMD, 0,
+                    (uint8_t *)target_ap, sizeof(struct mac_scan_result))) {
+                sys_mfree(target_ap);
+            }
         } else {
             wifi_sm_printf(WIFI_SM_NOTICE, STATE_MACHINE_DEBUG_PREFIX ": the targe ap isn't good enough(%d - %d < %d)\r\n",
                 candidate.rssi, rssi, WIFI_MGMT_ROAMING_RSSI_RELATIVE_GAIN);
@@ -508,32 +523,41 @@ static void mgmt_preroam_rollback(wifi_management_sm_data_t *sm)
     \param[out] none
     \retval     none
 */
-static void mgmt_connect_retry_param_set(wifi_management_sm_data_t *sm, uint8_t roaming_required)
+void mgmt_connect_retry_param_set(wifi_management_sm_data_t *sm, uint8_t roaming_required)
 {
+#ifdef CONFIG_WIFI_MESH_SMART
+    sm->retry_count = 0;
+    sm->retry_limit = 1;
+    sm->retry_interval = WIFI_MGMT_CONNECT_RETRY_INTERVAL;
+#else
     if (roaming_required == 1) {
-        if (WIFI_MGMT_UNLIMITED_ROAMING_RETRY()) {
-            sm->retry_count = WIFI_MGMT_ROAMING_RETRY_UNLIMITED - 1;
-            sm->retry_limit = WIFI_MGMT_ROAMING_RETRY_UNLIMITED;
+        if (interval_sec_ms == 0) {
+            sm->retry_count = 0;
+            sm->retry_limit = repeat_cnt;
+            sm->retry_interval = 0;
         } else {
-            sm->retry_count = WIFI_MGMT_ROAMING_RETRY_LIMIT - 1;
-            sm->retry_limit = WIFI_MGMT_ROAMING_RETRY_LIMIT;
+            if (repeat_cnt == 0 || WIFI_MGMT_UNLIMITED_ROAMING_RETRY()) {
+                sm->retry_count = WIFI_MGMT_ROAMING_RETRY_UNLIMITED - 1;
+                sm->retry_limit = WIFI_MGMT_ROAMING_RETRY_UNLIMITED;
+            } else {
+                sm->retry_count = repeat_cnt - 1;
+                sm->retry_limit = repeat_cnt;
+            }
+            sm->retry_interval = interval_sec_ms;
         }
-        sm->retry_interval = WIFI_MGMT_ROAMING_RETRY_INTERVAL;
     } else {
         sm->retry_count = WIFI_MGMT_CONNECT_RETRY_LIMIT - 1;
         sm->retry_limit = WIFI_MGMT_CONNECT_RETRY_LIMIT;
         sm->retry_interval = WIFI_MGMT_CONNECT_RETRY_INTERVAL;
     }
+#endif
 }
 
 static void mgmt_register_delayed_connect_retry(wifi_management_sm_data_t *sm, void *param)
 {
     uint32_t retry_interval;
 
-    if ((sm->retry_limit - sm->retry_count) > 30)
-        retry_interval = sm->retry_interval * (sm->retry_limit - sm->retry_count - 30);
-    else
-        retry_interval = sm->retry_interval;
+    retry_interval = sm->retry_interval;
     if (retry_interval > WIFI_MGMT_MAX_RETRY_INTERVAL)
         retry_interval = WIFI_MGMT_MAX_RETRY_INTERVAL;
 
@@ -905,6 +929,7 @@ SM_STEP(MAINTAIN_CONNECTION)
 #endif
         case WIFI_MGMT_EVENT_SCAN_FAIL:
         case WIFI_MGMT_EVENT_CONNECT_FAIL:
+        case WIFI_MGMT_EVENT_SCAN_RESULT:
         case WIFI_MGMT_EVENT_DISCONNECT:
             break;
         default:
@@ -1208,6 +1233,7 @@ SM_STEP(MAINTAIN_CONNECTION)
             if (sm->polling_scan)
                 mgmt_connected_scan_done(sm);
             mgmt_post_scan_done(sm->vif_idx, WIFI_MGMT_SCAN_SUCCESS);
+            break;
         case WIFI_MGMT_EVENT_SCAN_FAIL:
             mgmt_post_scan_done(sm->vif_idx, WIFI_MGMT_SCAN_FAIL);
             break;
@@ -1230,7 +1256,13 @@ SM_STEP(MAINTAIN_CONNECTION)
                     sm->reason == WIFI_MGMT_DISCON_RECV_DEAUTH ||
                     sm->reason == WIFI_MGMT_DISCON_SA_QUERY_FAIL) {
                 mgmt_connect_retry_param_set(sm, 1);
-                SM_ENTER(MAINTAIN_CONNECTION, SCAN);
+                if (sm->retry_count > 0) {
+                    SM_ENTER(MAINTAIN_CONNECTION, SCAN);
+                } else {
+                    mgmt_preroam_rollback(sm);
+                    mgmt_post_conn_done(sm->vif_idx, sm->reason);
+                    SM_ENTER(MAINTAIN_CONNECTION, IDLE);
+                }
             } else {
                 SM_ENTER(MAINTAIN_CONNECTION, IDLE);
             }
@@ -1305,7 +1337,7 @@ SM_STATE(MAINTAIN_SOFTAP, INIT)
 
     SM_ENTRY(MAINTAIN_SOFTAP, INIT);
 
-    wifi_netlink_ap_stop(sm->vif_idx);
+    wifi_netlink_ap_stop(sm->vif_idx, sm->reason);
 
     wvif->ap.ap_state = WIFI_AP_STATE_INIT;
 }
@@ -1366,7 +1398,7 @@ SM_STEP(MAINTAIN_SOFTAP)
             struct wifi_vif_tag *wvif = &wifi_vif_tab[sm->vif_idx];
             uint8_t new_channel = sm->reason;
 
-            wifi_netlink_ap_stop(sm->vif_idx);
+            wifi_netlink_ap_stop(sm->vif_idx, 3);
             wvif->ap.ap_state = WIFI_AP_STATE_INIT;
 
             wifi_vif_tab[sm->vif_idx].ap.cfg.channel = new_channel;
@@ -1401,6 +1433,7 @@ SM_STEP(MAINTAIN_SOFTAP)
             break;
         case WIFI_MGMT_EVENT_SCAN_FAIL:
             mgmt_post_scan_done(sm->vif_idx, WIFI_MGMT_SCAN_FAIL);
+            break;
         default:
             goto unexpected_events;
         }
@@ -1659,15 +1692,16 @@ int wifi_management_scan(uint8_t blocked, const char *ssid)
         scan_ssid[ssid_len] = '\0';
         ssid_len += 1;
     }
+    mgmt_wait_queue_flush();
+    wifi_sm_data[vif_idx].scan_blocked = blocked;
+
     if (eloop_message_send(vif_idx, WIFI_MGMT_EVENT_SCAN_CMD, 0, (uint8_t *)scan_ssid, ssid_len)) {
         netlink_printf("MGMT: SCAN_CMD, eloop event queue full\r\n");
+        wifi_sm_data[vif_idx].scan_blocked = 0;
         if (scan_ssid)
             sys_mfree(scan_ssid);
         return -2;
     }
-
-    mgmt_wait_queue_flush();
-    wifi_sm_data[vif_idx].scan_blocked = blocked;
 
     if (blocked) {
         reason = mgmt_wait_queue_fetch(vif_idx, MGMT_WAIT_EVT_SCAN_DONE, 2500);
@@ -1736,6 +1770,11 @@ int wifi_management_connect(char *ssid, char *password, uint8_t blocked)
     sta_cfg->channel = 0xFF;
     sta_cfg->conn_with_bssid = 0;
     sta_cfg->conn_blocked = blocked;
+    sta_cfg->scan_mode = sta_cfg_prev->scan_mode;
+    sta_cfg->scan_mode_user_setted = sta_cfg_prev->scan_mode_user_setted;
+    sta_cfg->mfpr = sta_cfg_prev->mfpr;
+    sta_cfg->mfpr_user_setted = sta_cfg_prev->mfpr_user_setted;
+    sta_cfg->pci_en = sta_cfg_prev->pci_en;
 
     /* Clear history IP if AP changed */
     if ((sta_cfg->ssid_len != sta->cfg.ssid_len)
@@ -1761,7 +1800,8 @@ int wifi_management_connect(char *ssid, char *password, uint8_t blocked)
 
     if (blocked) {
         /* Block here until CONNECT related event received */
-        reason = mgmt_wait_queue_fetch(vif_idx, MGMT_WAIT_EVT_CONN_DONE, WIFI_MGMT_CONNECT_BLOCK_TIME);
+        uint32_t timeout = (user_connect_timeout_ms > 0) ? user_connect_timeout_ms : WIFI_MGMT_CONNECT_BLOCK_TIME;
+        reason = mgmt_wait_queue_fetch(vif_idx, MGMT_WAIT_EVT_CONN_DONE, timeout);
         sta->last_reason = reason;
         if (reason == 0xFFFF) {
             netlink_printf("MGMT: eloop wait timeout\r\n");
@@ -1833,6 +1873,11 @@ int wifi_management_connect_with_bssid(uint8_t *bssid, char *password, uint8_t b
     }
     sta_cfg->channel = 0xFF;
     sta_cfg->conn_blocked = blocked;
+    sta_cfg->scan_mode = sta_cfg_prev->scan_mode;
+    sta_cfg->scan_mode_user_setted = sta_cfg_prev->scan_mode_user_setted;
+    sta_cfg->mfpr = sta_cfg_prev->mfpr;
+    sta_cfg->mfpr_user_setted = sta_cfg_prev->mfpr_user_setted;
+    sta_cfg->pci_en = sta_cfg_prev->pci_en;
 
     /* Clear history IP if AP changed */
     if (sys_memcmp(sta_cfg->bssid, sta->cfg.bssid, 6)) {
@@ -1856,7 +1901,8 @@ int wifi_management_connect_with_bssid(uint8_t *bssid, char *password, uint8_t b
 
     if (blocked) {
         /* Block here until CONNECT related event received */
-        reason = mgmt_wait_queue_fetch(vif_idx, MGMT_WAIT_EVT_CONN_DONE, WIFI_MGMT_CONNECT_BLOCK_TIME);
+        uint32_t timeout = (user_connect_timeout_ms > 0) ? user_connect_timeout_ms : WIFI_MGMT_CONNECT_BLOCK_TIME;
+        reason = mgmt_wait_queue_fetch(vif_idx, MGMT_WAIT_EVT_CONN_DONE, timeout);
         if (reason == 0xFFFF) {
             netlink_printf("MGMT: eloop wait timeout\r\n");
         }
@@ -2099,6 +2145,13 @@ int wifi_management_ap_start(char *ssid, char *passwd, uint32_t channel, wifi_ap
     }
     ap_cfg->channel = channel;
     ap_cfg->hidden = hidden;
+    if (vif_idx == WIFI_VIF_INDEX_DEFAULT) {
+        ap_cfg->max_conn = (wifi_vif_tab[vif_idx].ap.cfg.max_conn > 0) ?
+                            wifi_vif_tab[vif_idx].ap.cfg.max_conn : CFG_STA_NUM;
+    } else {
+        ap_cfg->max_conn = (wifi_vif_tab[vif_idx].ap.cfg.max_conn > 0) ?
+                            wifi_vif_tab[vif_idx].ap.cfg.max_conn : CFG_STA_NUM - 1;
+    }
     sys_memcpy(ap_cfg->bssid, wifi_vif_mac_addr_get(vif_idx), WIFI_ALEN);
 
     /* Flush wait queue */
@@ -2186,6 +2239,21 @@ int wifi_management_sta_start(void)
 
     if (eloop_message_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_SWITCH_MODE_CMD, WVIF_STA, NULL, 0)) {
         netlink_printf("MGMT: vif %d SWITCH_MODE_CMD, eloop event queue full\r\n", WIFI_VIF_INDEX_DEFAULT);
+        return -1;
+    }
+    return 0;
+}
+
+int wifi_management_sta_auto_connect(void)
+{
+    WIFI_CLOSED_CHECK(1);
+
+    if (eloop_message_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_SWITCH_MODE_CMD, WVIF_STA, NULL, 0)) {
+        netlink_printf("MGMT: vif %d SWITCH_MODE_CMD, eloop event queue full\r\n", WIFI_VIF_INDEX_DEFAULT);
+        return -1;
+    }
+    if (eloop_event_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_AUTO_CONNECT_CMD)) {
+        netlink_printf("MGMT: AUTO_CONNECT_CMD, eloop event queue full\r\n");
         return -1;
     }
     return 0;
@@ -2352,6 +2420,8 @@ int wifi_management_init(void)
         return -1;
     }
 
+    wifi_eloop_init();
+
     wifi_mgmt_task_tcb = (os_task_t)sys_task_create(NULL, (const uint8_t *)"wifi_mgmt", NULL,
                     MGMT_TASK_STACK_SIZE, MGMT_TASK_QUEUE_SIZE, MGMT_TASK_QUEUE_ITEM_SIZE,
                     MGMT_TASK_PRIORITY, (task_func_t)wifi_management_task, NULL);
@@ -2360,15 +2430,15 @@ int wifi_management_init(void)
         return -2;
     }
 
-    wifi_eloop_init();
-
     /* Wifi management sm init */
     eloop_event_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_INIT);
 
+#ifndef CONFIG_RF_TEST_SUPPORT
     if (wifi_netlink_auto_conn_get()) {
         eloop_message_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_SWITCH_MODE_CMD, WVIF_STA, NULL, 0);
         eloop_event_send(WIFI_VIF_INDEX_DEFAULT, WIFI_MGMT_EVENT_AUTO_CONNECT_CMD);
     }
+#endif
     return 0;
 }
 

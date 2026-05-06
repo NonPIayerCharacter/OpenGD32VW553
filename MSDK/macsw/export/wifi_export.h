@@ -171,6 +171,11 @@ void coex_set_wlan_pti(enum wlan_pti_frame_type frame_type, uint32_t pti);
  */
 uint8_t coex_get_wlan_pti(enum wlan_pti_frame_type frame_type);
 
+#ifdef CFG_WIFI_MESH_SMART
+void macif_set_user_vendor_oui(uint8_t *vendor_id);
+void macif_get_user_vendor_oui(uint8_t *vendor_id);
+#endif
+
 extern bool wifi_in_doze(void);
 extern void wifi_wakeup_isr(void);
 

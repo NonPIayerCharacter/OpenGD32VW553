@@ -1,8 +1,6 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-add_library(util_api INTERFACE)
-
 add_library(util)
 
 target_sources(util
@@ -19,19 +17,19 @@ target_sources(util
         src/util.c
 )
 
-
-target_include_directories(util_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+set(UTIL_INCLUDE_REL_PATHS
+    include
 )
+
+msdk_agg_api(util_api ${UTIL_INCLUDE_REL_PATHS})
 
 target_link_libraries(util
-    rtos_api
-    util_api
-    riscv_api
-    mbedtls_api
-    bsp_api
+    PUBLIC util_api
+    PRIVATE
+        rtos_api
+        riscv_api
+        mbedtls_api
+        bsp_api
 )
 
-add_lib_api(util_api)
-add_lib(util)
+msdk_agg_module(util)

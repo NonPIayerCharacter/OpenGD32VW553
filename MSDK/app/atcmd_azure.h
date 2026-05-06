@@ -35,7 +35,7 @@ OF SUCH DAMAGE.
 #ifndef _ATCMD_AZURE_H_
 #define _ATCMD_AZURE_H_
 
-#include "app_cfg.h"
+#include <app_cfg.h>
 #ifdef CONFIG_AZURE_F527_DEMO_SUPPORT
 #ifndef AES_KEY_SZ
     #define AES_KEY_SZ              16

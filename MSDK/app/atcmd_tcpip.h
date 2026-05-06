@@ -80,10 +80,6 @@ typedef struct _client_info {
     uint32_t    remote_ip;
     uint16_t    remote_port;
     uint16_t    local_port;
-#ifdef CONFIG_ATCMD_SPI
-    struct list recv_data_list;
-    os_mutex_t  list_lock;
-#endif
 } client_info_t;
 
 typedef struct _cip_info {
@@ -96,12 +92,20 @@ typedef struct _cip_info {
     uint8_t         local_srv_stop;
     client_info_t   cli[MAX_CLIENT_NUM];
     uint32_t        cli_num;
+    uint8_t         tcp_udp_start_process_num;
+#ifdef CONFIG_ATCMD_SPI
+    struct list recv_data_list;
+    os_mutex_t list_lock;
+    uint8_t list_data_count;
+    uint8_t triger_count;
+#endif
 } cip_info_t;
 
 #ifdef CONFIG_ATCMD_SPI
 #define AT_SPI_MAX_DATA_LEN         2048
 struct recv_data_node {
     struct list_hdr list_hdr;
+    int fd; // store which fd store this data
     uint8_t *data;
     size_t  data_len;
 };

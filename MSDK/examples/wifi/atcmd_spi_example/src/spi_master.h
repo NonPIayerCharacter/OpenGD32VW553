@@ -38,7 +38,7 @@ OF SUCH DAMAGE.
 #include "app_cfg.h"
 #define ATCMD_FIXED_LEN         128
 
-//#define CONFIG_SPI_3_WIRED
+// #define CONFIG_SPI_3_WIRED
 
 //#define SPI_MASTER_DEBUG_PRINT
 

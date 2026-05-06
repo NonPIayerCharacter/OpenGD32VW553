@@ -85,6 +85,8 @@ extern int net_l2_send(void *net_if, const uint8_t *data, int data_len, uint16_t
 /* wifi wpa apis */
 extern void wifi_wpa_rx_mgmt_cb(struct wifi_frame_info *info, void *arg);
 extern int wifi_wpa_eapol_to_vif_idx(struct wpas_eapol *eapol);
+extern uint16_t wifi_wpa_get_connect_fail_status(void);
+extern uint16_t wifi_wpa_get_disconnect_reason(void);
 extern int wifi_wpa_sae_to_vif_idx(struct wpas_sae *sae);
 extern int wifi_wpa_sa_query_to_vif_idx(struct sa_query_data *sa_query);
 extern int wifi_wpa_ap_to_vif_idx(struct wpas_ap *w_ap);
@@ -113,6 +115,7 @@ extern uint8_t wifi_wpa_ap_cfg_dtim_period_get(struct wpas_ap *w_ap);
 extern uint8_t wifi_wpa_ap_cfg_bcn_interval_get(struct wpas_ap *w_ap);
 extern uint8_t wifi_wpa_ap_cfg_hidden_get(struct wpas_ap *w_ap);
 extern uint32_t wifi_wpa_ap_cfg_akm_get(struct wpas_ap *w_ap);
+extern uint8_t wifi_wpa_ap_cfg_max_conn_get(struct wpas_ap *w_ap);
 extern uint32_t wifi_wpa_sta_cfg_akm_get(int vif_idx);
 extern int wifi_wpa_send_connect_fail_event(int vif_idx);
 extern int wifi_wpa_send_rx_mgmt_done_event(int vif_idx, uint8_t *param, uint32_t param_len);

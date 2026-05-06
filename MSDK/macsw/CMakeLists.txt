@@ -1,13 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 
-add_library(wifi_api INTERFACE)
-
-target_include_directories(wifi_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/export>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/import>
+set(GD32VW55X_WIFI_INCLUDE_REL_PATHS
+    export
+    import
 )
-add_lib_api(wifi_api)
+msdk_agg_api(wifi_api ${GD32VW55X_WIFI_INCLUDE_REL_PATHS})
+
+
 if (NOT CONFIG_STATIC_LIB_BUILDED)
     add_library(wifi STATIC)
     file(GLOB_RECURSE SRC_WIFI_DRIVER  ${CMAKE_CURRENT_SOURCE_DIR}/*.c)

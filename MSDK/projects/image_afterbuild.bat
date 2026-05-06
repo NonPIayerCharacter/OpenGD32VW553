@@ -216,8 +216,8 @@ python %GENTOOL% --config %CONFIG_FILE% ^
 :download
 
 set OPENOCD="%OPENOCD_PATH%\\openocd.exe"
-::set LINKCFG="%cur_dir%\\..\\openocd_gdlink.cfg"
-set LINKCFG="%cur_dir%\\..\\openocd_jlink.cfg"
+set LINKCFG="%cur_dir%\\..\\openocd_gdlink.cfg"
+::set LINKCFG="%cur_dir%\\..\\openocd_jlink.cfg"
 
 echo "Download OTA image use the follow command: "
 echo %OPENOCD% -f %LINKCFG% -c \"program %DOWNLOAD_BIN% 0x0800A000 verify reset exit;\"

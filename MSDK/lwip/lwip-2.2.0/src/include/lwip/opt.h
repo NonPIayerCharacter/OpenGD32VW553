@@ -6,6 +6,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * Copyright (c) 2025, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -770,6 +771,16 @@
 #undef IP_FRAG
 #define IP_FRAG                         0
 #endif /* !LWIP_IPV4 */
+
+/* GD modified */
+/**
+ * IP_NAPT==1: Enables IPv4 Network Address and Port Translation
+ * Note that IP_FORWARD needs to be enabled for NAPT to work
+ */
+#if !defined IP_NAPT || defined __DOXYGEN__
+#define IP_NAPT                      0
+#endif
+/* GD modified end */
 
 /**
  * IP_OPTIONS_ALLOWED: Defines the behavior for IP options.

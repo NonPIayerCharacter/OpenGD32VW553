@@ -58,7 +58,7 @@ extern "C" {
 #ifdef CFG_BLE_HCI_MODE
 #ifdef CONFIG_PLATFORM_ASIC
 #ifndef CFG_GD_TRACE_EXT
-#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL)
+#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL || CONFIG_BOARD == PLATFORM_BOARD_32VW55X_SONIC)
 #define LOG_UART                UART1
 #else
 #define LOG_UART                UART2
@@ -75,7 +75,7 @@ extern "C" {
 #define HCI_UART                UART2
 #endif          // CONFIG_PLATFORM_ASIC end
 #else /* CFG_BLE_HCI_MODE */
-#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL)
+#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL || CONFIG_BOARD == PLATFORM_BOARD_32VW55X_SONIC)
 #define LOG_UART                UART1
 #else
 #define LOG_UART                UART2
@@ -98,7 +98,7 @@ extern "C" {
 #endif
 #endif /* TRACE_UART */
 
-#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL)
+#if defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL || CONFIG_BOARD == PLATFORM_BOARD_32VW55X_SONIC)
 #define AT_UART                 UART2
 #elif defined(CONFIG_BOARD) && (CONFIG_BOARD == PLATFORM_BOARD_32VW55X_F527)
 #define AT_UART                 USART0

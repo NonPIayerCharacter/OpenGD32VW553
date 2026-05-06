@@ -10,6 +10,8 @@ find_program(CMAKE_LINKER ${CROSS_COMPILE}-linker)
 find_program(CMAKE_OBJCOPY ${CROSS_COMPILE}-objcopy)
 find_program(CMAKE_OBJDUMP ${CROSS_COMPILE}-objdump)
 find_program(CMAKE_STRIP ${CROSS_COMPILE}-strip)
+find_program(CMAKE_STRIP ${CROSS_COMPILE}-strip)
+find_program(CMAKE_SIZE ${CROSS_COMPILE}-size)
 find_program(CMAKE_OPENOCD openocd)
 
 get_filename_component(OPENOCD_DIR "${CMAKE_OPENOCD}" DIRECTORY)

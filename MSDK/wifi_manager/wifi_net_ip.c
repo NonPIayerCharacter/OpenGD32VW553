@@ -39,6 +39,7 @@ OF SUCH DAMAGE.
 #include "wifi_vif.h"
 #include "wifi_export.h"
 #include "lwip/netif.h"
+#include "lwip/lwip_napt.h"
 #include "dbg_print.h"
 #include "string.h"
 
@@ -146,11 +147,36 @@ int wifi_dhcp_start_no_wait(void *net_if)
     return 0;
 }
 #endif
+
 /*
  ****************************************************************************************
  * PUBLIC FUNCTIONS
  ****************************************************************************************
  */
+#ifdef CONFIG_NAPT
+/*!
+    \brief      Enable NAPT for the specified VIF
+    \param[in]  vif_idx: index of the wifi vif
+    \param[out] none
+    \retval     0 on success and != 0 if error occured.
+*/
+int wifi_set_softap_napt_enable(int vif_idx)
+{
+    struct netif *net_if;
+
+    if (vif_idx >= CFG_VIF_NUM)
+        return -1;
+
+    net_if = vif_idx_to_net_if(vif_idx);
+    if (!net_if)
+        return -1;
+
+    ip_napt_enable_netif(net_if, 1);
+
+    return 0;
+}
+#endif /* CONFIG_NAPT */
+
 /*!
     \brief      Config the IP address infomation
     \param[in]  vif_idx: index of the wifi vif

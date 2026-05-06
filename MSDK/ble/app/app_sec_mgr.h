@@ -38,6 +38,16 @@ OF SUCH DAMAGE.
 #include <stdint.h>
 #include "ble_gap.h"
 
+typedef struct
+{
+    void (*authen_cmpl)(uint8_t conn_idx, uint8_t result);
+
+    void (*input_key_req)(uint8_t conn_idx);
+
+    void (*key_cfm_req)(uint8_t conn_idx, uint32_t key);
+} app_sec_callbacks;
+
+
 /*!
     \brief      Reset application security module
     \param[in]  none
@@ -191,5 +201,11 @@ bool app_sec_cancel_bonding(void);
     \retval     bool: true if security keys are managered by application, otherwise false
 */
 bool app_sec_user_key_mgr_get(void);
+
+bool app_sec_pin_code_set(uint32_t pin_code);
+
+uint32_t app_sec_pin_code_get(void);
+
+bool app_sec_callbacks_set(app_sec_callbacks cb);
 
 #endif // APP_SEC_MGR_H_

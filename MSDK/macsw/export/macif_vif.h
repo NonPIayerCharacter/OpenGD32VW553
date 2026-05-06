@@ -196,6 +196,32 @@ void macif_vif_wireless_mode_set(uint32_t wireless_mode);
  */
 int8_t macif_vif_roaming_rssi_get(uint32_t vif_idx);
 
+/**
+ ****************************************************************************************
+ * @brief get ap country code
+ *
+ * @param[in] vif_idx index of VIF
+ *
+ * @return wifi_wireless_mode
+ ****************************************************************************************
+ */
+uint8_t macif_vif_country_code_get(uint32_t vif_idx);
+
+#ifdef CFG_WIFI_MESH_SMART
+/**
+ ****************************************************************************************
+ * @brief get vendor ie
+ *
+ * @param[in] vif_idx index of VIF
+ * @param[out] vendor_ie the vendor ie buffer
+ * @param[in] max_len the max length of vendor ie buffer
+ *
+ * @return length of vendor ie, -1 if error occurred.
+ ****************************************************************************************
+ */
+int8_t macif_vif_vendor_ie_get(uint32_t vif_idx, uint8_t *vendor_ie, uint8_t max_len);
+#endif
+
 #ifdef __cplusplus
  }
 #endif

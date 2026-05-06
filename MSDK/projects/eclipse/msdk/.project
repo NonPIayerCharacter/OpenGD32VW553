@@ -610,6 +610,11 @@
 			<locationURI>PARENT-3-PROJECT_LOC/lwip/lwip-2.2.0/src/core/ipv4/ip4_frag.c</locationURI>
 		</link>
 		<link>
+			<name>lwip/ip4_napt.c</name>
+			<type>1</type>
+			<locationURI>PARENT-3-PROJECT_LOC/lwip/lwip-2.2.0/src/core/ipv4/ip4_napt.c</locationURI>
+		</link>
+		<link>
 			<name>lwip/ipv6</name>
 			<type>2</type>
 			<locationURI>virtual:/virtual</locationURI>
@@ -868,6 +873,11 @@
 			<name>wifi_manager/wifi_management.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/wifi_manager/wifi_management.c</locationURI>
+		</link>
+		<link>
+			<name>wifi_manager/wifi_mesh_smart</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
 		</link>
 		<link>
 			<name>wifi_manager/wifi_net_ip.c</name>
@@ -2963,6 +2973,11 @@
 			<name>plf/src/wakelock.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/plf/src/wakelock.c</locationURI>
+		</link>
+		<link>
+			<name>wifi_manager/wifi_mesh_smart/wifi_mesh_smart_config.c</name>
+			<type>1</type>
+			<locationURI>PARENT-3-PROJECT_LOC/wifi_manager/wifi_mesh_smart/wifi_mesh_smart_config.c</locationURI>
 		</link>
 		<link>
 			<name>os/threadx/threadx_port/threadx_port.c</name>

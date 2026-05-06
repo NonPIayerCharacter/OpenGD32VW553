@@ -292,13 +292,13 @@ enum ssid_match_result {
 
 int wpas_ap_start(int vif_idx);
 
-int wpas_ap_stop(int vif_idx);
+int wpas_ap_stop(int vif_idx, uint16_t deauth_reason);
 
 void handle_ieee802_11_mgmt(struct wpas_ap * ap, struct wifi_frame_info *info, struct ieee80211_mgmt *mgmt);
 
 void ap_mgmt_tx_cb_handler(struct wpas_ap *ap, uint8_t *data, size_t len, uint8_t *ack);
 
-int ap_update_bcn(struct wpas_ap *ap);
+int ap_update_bcn(struct wpas_ap *ap, uint8_t *vendor_ie, int vendor_ie_len);
 
 int ap_send_deauth(struct wpas_ap * ap, const uint8_t *addr, int reason);
 

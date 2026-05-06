@@ -340,6 +340,8 @@
                                     <listOptionValue builtIn="false" value="CFG_RTOS"/>
                                     									
                                     <listOptionValue builtIn="false" value="PLATFORM_OS_FREERTOS"/>
+
+                                    <listOptionValue builtIn="false" value="CONFIG_AWS_IOT_SUPPORT"/>
                                     								
                                 </option>
                                 								

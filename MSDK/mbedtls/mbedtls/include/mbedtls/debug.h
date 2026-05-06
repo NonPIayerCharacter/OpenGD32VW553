@@ -114,7 +114,7 @@
    #define MBEDTLS_PRINTF_LONGLONG  "I64d"
 #else \
     /* defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER < 1900) */
-   #define MBEDTLS_PRINTF_SIZET     "zu"
+   #define MBEDTLS_PRINTF_SIZET     "u"//"zu"
    #define MBEDTLS_PRINTF_LONGLONG  "lld"
 #endif \
     /* defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER < 1900) */

@@ -51,7 +51,7 @@ struct dhcpOfferedAddr leases[DHCPD_MAX_LEASES] = {0};
 struct dhcpd payload_out;
 struct server_config_t server_config;
 struct udp_pcb *UdpPcb = NULL;
-int    pass_wan_domain = 0;
+int    dhcpd_leases_ip_domain = -1;
 #define DECLINE_IP_MAX    (CFG_STA_NUM / 2)
 uint32_t decline_ip[DECLINE_IP_MAX] = {0};
 #define DHCP_SERVER_PORT  67
@@ -304,9 +304,51 @@ void dhcpd_delete_ipaddr_by_macaddr(uint8_t *mac_addr)
     UNLOCK_TCPIP_CORE();
 }
 
+int dhcpd_set_ip_range(uint32_t start_ip, uint32_t end_ip, uint32_t lease_time)
+{
+    if (start_ip == 0 || end_ip == 0) {
+        return -1;
+    }
+
+    if (PP_NTOHL(start_ip) >= PP_NTOHL(end_ip)) {
+        return -1;
+    }
+
+    // Update server configuration
+    server_config.start.s_addr = start_ip;
+    server_config.end.s_addr = end_ip;
+    server_config.max_leases = PP_NTOHL(end_ip) - PP_NTOHL(start_ip) + 1;
+
+    if (lease_time > 0) {
+        server_config.lease_time = lease_time;
+    }
+
+    // Clear leases that are out of new IP range to avoid IP conflict
+    for (int idx = 0; idx < DHCPD_MAX_LEASES; idx++) {
+        if (memcmp(leases[idx].chaddr, "\x00\x00\x00\x00\x00\x00", 6) != 0) {
+            uint32_t lease_ip_host = ntohl(leases[idx].yiaddr.s_addr);
+            // Check if lease IP is outside new address pool range
+            if (lease_ip_host < ntohl(server_config.start.s_addr) ||
+                lease_ip_host > ntohl(server_config.end.s_addr)) {
+                // Clear this lease as it's out of range
+                memset(&leases[idx], 0, sizeof(struct dhcpOfferedAddr));
+            }
+        }
+    }
+
+    return 0;
+}
+
+void dhcpd_set_dns_server(uint32_t dns_ip)
+{
+    LOCK_TCPIP_CORE();
+    server_config.dns_server.s_addr = dns_ip;
+    UNLOCK_TCPIP_CORE();
+}
+
 static void make_dhcpd_packet(struct dhcpd *packet, struct dhcpd *oldpacket, char type)
 {
-    uint32_t lease_time = server_config.lease;
+    uint32_t lease_time = server_config.lease_time;
     //uint32_t dns_server = 0;
     unsigned char *option = packet->options;
     char domain_name[255] = {0};
@@ -326,12 +368,18 @@ static void make_dhcpd_packet(struct dhcpd *packet, struct dhcpd *oldpacket, cha
     sys_memcpy(packet->sname,server_config.sname, 6);
     dhcpd_add_option(option, DHCP_MESSAGE_TYPE, sizeof(type), &type);
     dhcpd_add_option(option, DHCP_SERVER_ID, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-    dhcpd_add_option(option, DHCP_LEASE_TIME, sizeof(lease_time),&lease_time);
-    dhcpd_add_option(option, DHCP_SUBNET, sizeof(server_config.mask.s_addr), &server_config.mask.s_addr);
-    dhcpd_add_option(option, DHCP_ROUTER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-    dhcpd_add_option(option, DHCP_DNS_SERVER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-    sys_memcpy(domain_name, DEFAULT_DOMAIN, sizeof(DEFAULT_DOMAIN));
-    dhcpd_add_option(option, DHCP_DOMAIN_NAME, strlen(domain_name), domain_name);
+    if (type != DHCPNAK) {
+        dhcpd_add_option(option, DHCP_LEASE_TIME, sizeof(lease_time),&lease_time);
+        dhcpd_add_option(option, DHCP_SUBNET, sizeof(server_config.mask.s_addr), &server_config.mask.s_addr);
+        dhcpd_add_option(option, DHCP_ROUTER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
+        if (server_config.dns_server.s_addr != 0) {
+            dhcpd_add_option(option, DHCP_DNS_SERVER, sizeof(server_config.dns_server.s_addr), &server_config.dns_server.s_addr);
+        } else {
+            dhcpd_add_option(option, DHCP_DNS_SERVER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
+        }
+        sys_memcpy(domain_name, DEFAULT_DOMAIN, sizeof(DEFAULT_DOMAIN));
+        dhcpd_add_option(option, DHCP_DOMAIN_NAME, strlen(domain_name), domain_name);
+    }
 }
 
 static int discover(struct dhcpd *packetinfo)
@@ -397,45 +445,45 @@ static int discover(struct dhcpd *packetinfo)
     return 0;
 }
 
+static void make_dhcpnak(struct dhcpd *packetinfo)
+{
+    memset(&payload_out, 0, sizeof(struct dhcpd));
+    make_dhcpd_packet(&payload_out, packetinfo, DHCPNAK);
+
+    // DHCPNAK doesn't need yiaddr, keep it as 0
+    payload_out.yiaddr = 0;
+}
+
+static void make_dhcpack(struct dhcpd *packetinfo, struct dhcpOfferedAddr *lease)
+{
+    memset(&payload_out, 0, sizeof(struct dhcpd));
+    make_dhcpd_packet(&payload_out, packetinfo, DHCPACK);
+
+    // Set the assigned IP address
+    payload_out.yiaddr = lease->yiaddr.s_addr;
+}
+
 static int request(struct dhcpd *packetinfo)
 {
-    uint32_t lease_time = server_config.lease;
-    char type;
-    unsigned char *option = payload_out.options;
     struct dhcpOfferedAddr *lease;
-    char domain_name[255] = {0};
     uint32_t request_addr = 0;
-    lease_time = htonl(lease_time);
-
-    memset(&payload_out, 0, sizeof(struct dhcpd));
 
     if (dhcpd_pickup_opt(packetinfo, DHCP_REQUESTED_IP, sizeof(request_addr), &request_addr) == NULL) {
         request_addr = 0;
+    } else if (((server_config.siaddr.s_addr >> 16) & 0xFF) != ((request_addr >> 16) & 0xFF)) {
+        // Domain name mismatch, send DHCPNAK
+        make_dhcpnak(packetinfo);
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("[DHCPD]: Domain name mismatch - client: %d, server: %d\n", ((request_addr >> 16) & 0xFF), ((server_config.siaddr.s_addr >> 16) & 0xFF)));
+        return 0;
     }
 
     lease = DHCPD_FindLeaseByChaddr(packetinfo->chaddr);
+
     if ((lease != NULL) && (request_addr == lease->yiaddr.s_addr)) {
-        type = DHCPACK;
-        payload_out.op = BOOTREPLY;
-        payload_out.htype = ETH_10MB;
-        payload_out.hlen = ETH_10MB_LEN;
-        payload_out.xid = packetinfo->xid;
-        sys_memcpy(payload_out.chaddr, packetinfo->chaddr, 16);
-        payload_out.flags = packetinfo->flags;
-        payload_out.ciaddr = packetinfo->ciaddr;
-        payload_out.siaddr = server_config.siaddr.s_addr;
-        payload_out.giaddr = packetinfo->giaddr;
-        payload_out.cookie = htonl(DHCP_MAGIC);
-        payload_out.options[0] = DHCP_END;
-        payload_out.yiaddr = lease->yiaddr.s_addr;
-        dhcpd_add_option(option, DHCP_MESSAGE_TYPE, sizeof(type), &type);
-        dhcpd_add_option(option, DHCP_SERVER_ID, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        dhcpd_add_option(option, DHCP_LEASE_TIME, sizeof(lease_time), &lease_time);
-        dhcpd_add_option(option, DHCP_SUBNET, sizeof(server_config.mask.s_addr), &server_config.mask.s_addr);
-        dhcpd_add_option(option, DHCP_ROUTER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        dhcpd_add_option(option, DHCP_DNS_SERVER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        sys_memcpy(domain_name, DEFAULT_DOMAIN, sizeof(DEFAULT_DOMAIN));
-        dhcpd_add_option(option, DHCP_DOMAIN_NAME, strlen(domain_name), domain_name);
+        // Client requests assigned IP address, send DHCPACK
+        make_dhcpack(packetinfo, lease);
+
+        // Set destination address for unicast if flags is 0
         if (packetinfo->flags == 0) {
 #if LWIP_IPV6
             destAddr.u_addr.ip4.addr = lease->yiaddr.s_addr;
@@ -444,6 +492,7 @@ static int request(struct dhcpd *packetinfo)
 #endif
         }
 
+        // Clear DELETED flag if it was set
         if ((lease->flag & DELETED) != 0) {
             lease->flag &= ~DELETED;
         }
@@ -454,39 +503,8 @@ static int request(struct dhcpd *packetinfo)
                 packetinfo->chaddr[0], packetinfo->chaddr[1], packetinfo->chaddr[2],
                 packetinfo->chaddr[3], packetinfo->chaddr[4], packetinfo->chaddr[5]);
     } else if ((lease != NULL) && (request_addr == 0) && (packetinfo->ciaddr == lease->yiaddr.s_addr)) {
-        // client request the same IP address, renew the lease pool
-        type = DHCPACK;
-        payload_out.op = BOOTREPLY;
-        payload_out.htype = ETH_10MB;
-        payload_out.hlen = ETH_10MB_LEN;
-        payload_out.xid = packetinfo->xid;
-        sys_memcpy(payload_out.chaddr, packetinfo->chaddr, 16);
-        payload_out.flags = packetinfo->flags;
-        payload_out.ciaddr = packetinfo->ciaddr;
-        payload_out.siaddr = server_config.siaddr.s_addr;
-        payload_out.giaddr = packetinfo->giaddr;
-        payload_out.cookie = htonl(DHCP_MAGIC);
-        payload_out.options[0] = DHCP_END;
-        payload_out.yiaddr = lease->yiaddr.s_addr;
-        dhcpd_add_option(option, DHCP_MESSAGE_TYPE, sizeof(type), &type);
-        dhcpd_add_option(option, DHCP_SERVER_ID, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        dhcpd_add_option(option, DHCP_LEASE_TIME, sizeof(lease_time), &lease_time);
-        dhcpd_add_option(option, DHCP_SUBNET, sizeof(server_config.mask.s_addr), &server_config.mask.s_addr);
-        dhcpd_add_option(option, DHCP_ROUTER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        dhcpd_add_option(option, DHCP_DNS_SERVER, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
-        sys_memcpy(domain_name, DEFAULT_DOMAIN, sizeof(DEFAULT_DOMAIN));
-        dhcpd_add_option(option, DHCP_DOMAIN_NAME, strlen(domain_name), domain_name);
-        if (packetinfo->flags == 0) {
-#if LWIP_IPV6
-            destAddr.u_addr.ip4.addr = lease->yiaddr.s_addr;
-#else
-            destAddr.addr = lease->yiaddr.s_addr;
-#endif
-        }
-
-        if ((lease->flag & DELETED) != 0) {
-            lease->flag &= ~DELETED;
-        }
+        // Client requests renewal of the same IP address, send DHCPACK
+        make_dhcpack(packetinfo, lease);
 
         dbg_print(NOTICE, "DHCPD: IP lease renewal %d.%d.%d.%d for %02x:%02x:%02x:%02x:%02x:%02x.\n\r\n",
                 (uint32_t)(payload_out.yiaddr & 0xFF), (uint32_t)((payload_out.yiaddr >> 8) & 0xFF),
@@ -494,19 +512,8 @@ static int request(struct dhcpd *packetinfo)
                 packetinfo->chaddr[0], packetinfo->chaddr[1], packetinfo->chaddr[2],
                 packetinfo->chaddr[3], packetinfo->chaddr[4], packetinfo->chaddr[5]);
     } else {
-        type = DHCPNAK;
-        payload_out.op = BOOTREPLY;
-        payload_out.htype = ETH_10MB;
-        payload_out.hlen = ETH_10MB_LEN;
-        payload_out.xid = packetinfo->xid;
-        sys_memcpy(payload_out.chaddr, packetinfo->chaddr, 16);
-        payload_out.flags = packetinfo->flags;
-        payload_out.ciaddr = packetinfo->ciaddr;
-        payload_out.giaddr = packetinfo->giaddr;
-        payload_out.cookie = htonl(DHCP_MAGIC);
-        payload_out.options[0] = DHCP_END;
-        dhcpd_add_option(option, DHCP_MESSAGE_TYPE, sizeof(type), &type);
-        dhcpd_add_option(option, DHCP_SERVER_ID, sizeof(server_config.server.s_addr), &server_config.server.s_addr);
+        // Other cases, send DHCPNAK
+        make_dhcpnak(packetinfo);
     }
 
     return 0;
@@ -552,48 +559,10 @@ static int decline(struct dhcpd *packetinfo)
     return 0;
 }
 
-#if 0
-#define START_IP    0
-#define END_IP      1
-#define BOOT_IP     2
-static void ip_create_by_config(int flag, char * ipaddr)
-{
-    int i = 0, j = 0;
-
-    while(ipaddr[i] != '\0') {
-        if(ipaddr[i] == '.') {
-            j++;
-        }
-
-        i++;
-
-        if(j >= 3) {
-            break;
-        }
-    }
-
-    ipaddr[i] = '\0';
-
-    switch(flag) {
-    case START_IP:
-        strcat(ipaddr,"150");
-        break;
-    case END_IP:
-        strcat(ipaddr,"200");
-        break;
-    case BOOT_IP:
-        strcat(ipaddr,"5");
-        break;
-    default:
-        break;
-    }
-
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("DHCP IP: [ %s ]\n\r",ipaddr));
-}
-#endif
-
 static int init_config(struct netif *net_if)
 {
+    int8_t idx = 0;
+
     memset(&server_config, 0, sizeof(struct server_config_t));
 
     /* we use first listen interface as server IP */
@@ -624,20 +593,43 @@ static int init_config(struct netif *net_if)
     server_config.max_leases = DHCPD_MAX_LEASES;
 
     // lease time
-    server_config.lease = DEFAULT_LEASE_TIME; //3600
-    server_config.conflict_time = DEFAULT_CONFLICT_TIME; //3600
-    server_config.decline_time = DEFAULT_DECLINE_TIME; //3600
-    server_config.min_lease = DEFAULT_MIN_LEASE_TIME; //60
-    server_config.offer_time = DEFAULT_MIN_LEASE_TIME; //60
-    server_config.auto_time = DEFAULT_AUTO_TIME; //3
+    server_config.lease_time = DEFAULT_LEASE_TIME;          // 3600s
+    server_config.conflict_time = DEFAULT_CONFLICT_TIME;    // 3600s
+    server_config.decline_time = DEFAULT_DECLINE_TIME;      // 3600s
+    server_config.min_lease = DEFAULT_MIN_LEASE_TIME;       // 60s
+    server_config.offer_time = DEFAULT_MIN_LEASE_TIME;      // 60s
+    server_config.auto_time = DEFAULT_AUTO_TIME;            // 3s
     server_config.sname = DEFAULT_SNAME;
     server_config.boot_file = DEFAULT_BOOT_FILE;
 
 #if LWIP_IPV6
     server_config.siaddr.s_addr = PP_HTONL(PP_HTONL(net_if->ip_addr.u_addr.ip4.addr) + 1 + DHCPD_MAX_LEASES + 1);
+
+    if (dhcpd_leases_ip_domain != -1 && dhcpd_leases_ip_domain != ((net_if->gw.u_addr.ip4.addr >> 16) & 0xFF)) {
+        // when dhcpd start with a new ip doamin, reset leases
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("[DHCPD]: Reset leases due to new IP domain.\n"));
+        memset(leases, 0, sizeof(struct dhcpOfferedAddr) * DHCPD_MAX_LEASES);
+    }
+
+    dhcpd_leases_ip_domain = (net_if->gw.u_addr.ip4.addr >> 16) & 0xFF;
+
 #else
     server_config.siaddr.s_addr = PP_HTONL(PP_HTONL(net_if->ip_addr.addr) + 1 + DHCPD_MAX_LEASES + 1);
+
+    if (dhcpd_leases_ip_domain != -1 && dhcpd_leases_ip_domain != ((net_if->gw.addr >> 16) & 0xFF)) {
+        // when dhcpd start with a new ip doamin, reset leases
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("[DHCPD]: Reset leases due to new IP domain.\n"));
+        memset(leases, 0, sizeof(struct dhcpOfferedAddr) * DHCPD_MAX_LEASES);
+    }
+
+    dhcpd_leases_ip_domain = (net_if->gw.addr >> 16) & 0xFF;
 #endif
+
+    for (idx = 0; idx < server_config.max_leases; idx++) {
+        if (memcmp(leases[idx].chaddr, "\x00\x00\x00\x00\x00\x00", 6) != 0) {
+            leases[idx].flag |= DELETED;
+        }
+    }
 
     return 0;
 }
@@ -660,14 +652,10 @@ uint8_t dhcp_process(void *packet_addr)
 
     case DHCPREQUEST:
         // add detection if DHCPREQUEST frame was sent to us for wifi concurrent mode, refer to bugtrack<51>.
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("[DHCPD]: request packet...\n\r"));
         if ((((struct dhcpd *)packet_addr)->ciaddr != 0) && (((((struct dhcpd *)packet_addr)->ciaddr >> 16) & 0xFF) != ((server_config.siaddr.s_addr >> 16) & 0xFF))) {
             return 0;
-        } else if (dhcpd_pickup_opt((struct dhcpd *)packet_addr, DHCP_REQUESTED_IP, sizeof(s_addr), &s_addr)) {
-            if (((server_config.siaddr.s_addr >> 16) & 0xFF) != ((s_addr >> 16) & 0xFF)) {
-                return 0;
-            }
         }
-        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("[DHCPD]: request packet...\n\r"));
         request(packet_addr);
         break;
 
@@ -719,17 +707,10 @@ static void UDP_Receive(void *arg, struct udp_pcb *upcb, struct pbuf *p, const i
 
 void dhcpd_daemon(struct netif *net_if)
 {
-    int8_t idx = 0;
-
     if (UdpPcb == NULL) {
         // memset(leases, 0, sizeof(struct dhcpOfferedAddr) * DHCPD_MAX_LEASES);
         memset(decline_ip, 0, DECLINE_IP_MAX * 4);
         init_config(net_if);
-        for (idx = 0; idx < server_config.max_leases; idx++) {
-            if (memcmp(leases[idx].chaddr, "\x00\x00\x00\x00\x00\x00", 6) != 0) {
-                leases[idx].flag |= DELETED;
-            }
-        }
         UdpPcb = udp_new();
         udp_bind(UdpPcb, IP_ADDR_ANY, 67);
         udp_bind_netif(UdpPcb, net_if);

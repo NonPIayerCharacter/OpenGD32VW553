@@ -133,11 +133,12 @@ void blufi_wifi_status_get(void)
     \param[out] none
     \retval     none
 */
+static void blufi_cb_scan_fail(void *eloop_data, void *user_ctx);
 static void blufi_cb_scan_done(void *eloop_data, void *user_ctx)
 {
     blufi_wifi_scan_list_get();
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, blufi_cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, blufi_cb_scan_fail);
 }
 
 /*!
@@ -150,8 +151,8 @@ static void blufi_cb_scan_done(void *eloop_data, void *user_ctx)
 static void blufi_cb_scan_fail(void *eloop_data, void *user_ctx)
 {
     dbg_print(ERR, "ble config wifi scan cb failed\r\n");
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, blufi_cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, blufi_cb_scan_fail);
 
     btc_blufi_send_error_info(ESP_BLUFI_WIFI_SCAN_FAIL);
 }
@@ -168,8 +169,8 @@ static void blufi_wifi_scan(void)
     eloop_event_register(WIFI_MGMT_EVENT_SCAN_FAIL, blufi_cb_scan_fail, NULL, NULL);
 
     if (wifi_management_scan(false, NULL) == -1) {
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, blufi_cb_scan_done);
+        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, blufi_cb_scan_fail);
         dbg_print(ERR, "ble config wifi scan failed\r\n");
     }
 }
@@ -185,7 +186,7 @@ static void blufi_wifi_connect_success(void *eloop_data, void *user_ctx)
 {
     uint8_t state = 0;
 
-    eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS);
+    eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS, blufi_wifi_connect_success);
     blufi_wifi_status_get();
 }
 
@@ -213,7 +214,7 @@ void blufi_wifi_connect(void)
     eloop_event_register(WIFI_MGMT_EVENT_DHCP_SUCCESS, blufi_wifi_connect_success, NULL, NULL);
     if (wifi_management_connect((char *)blufi_wifi.sta_ssid.array, password, true)) {
         dbg_print(ERR, "ble config wifi connect failed\r\n");
-        eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS);
+        eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS, blufi_wifi_connect_success);
 
         info.sta_ssid = blufi_wifi.sta_ssid.array;
         info.sta_ssid_len = blufi_wifi.sta_ssid.length;

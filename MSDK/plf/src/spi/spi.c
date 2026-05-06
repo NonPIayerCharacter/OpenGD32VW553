@@ -81,7 +81,6 @@ void spi_dma_single_mode_config(uint32_t direction)
 
 uint8_t spi_dma_tx_dummy = 0x7e;//0x12;
 uint8_t spi_dma_rx_dummy = 0x02;
-
 void spi_dma_dummy_mode_config(uint32_t direction)
 {
     dma_single_data_parameter_struct dma_init_struct;
@@ -176,10 +175,15 @@ void spi_slave_init(void)
 void spi_dma_config(bool dma_rx, uint32_t rx_mem,
                     bool dma_tx, uint32_t tx_mem, uint32_t dma_num, bool from_isr)
 {
-    spi_disable();
+    /* CRITICAL: Must disable DMA channels BEFORE clearing flags and reconfiguring */
+    dma_channel_disable(SPI_RX_DMA_CH);
+    dma_channel_disable(SPI_TX_DMA_CH);
+
+    /* Disable SPI DMA to ensure clean state */
+    spi_dma_disable(SPI_DMA_RECEIVE);
+    spi_dma_disable(SPI_DMA_TRANSMIT);
 
     spi_crc_error_clear();
-    //printf("==spi_dma_config==, %d, %d\r\n", from_isr, dma_num);
     dma_interrupt_flag_clear(SPI_RX_DMA_CH, DMA_INT_FLAG_FTF);
     dma_interrupt_flag_clear(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF);
 
@@ -200,12 +204,27 @@ void spi_dma_config(bool dma_rx, uint32_t rx_mem,
     dma_transfer_number_config(SPI_RX_DMA_CH, dma_num);
     dma_transfer_number_config(SPI_TX_DMA_CH, dma_num);
 
-    dma_channel_enable(SPI_RX_DMA_CH);
-    spi_dma_enable(SPI_DMA_RECEIVE);
+    /* CRITICAL: Enable DMA channels and SPI DMA in one atomic operation */
+    if (from_isr == 0)
+        sys_enter_critical();
 
+    /* Enable DMA channels first */
+    dma_channel_enable(SPI_RX_DMA_CH);
     dma_channel_enable(SPI_TX_DMA_CH);
+
+    /* Then enable SPI DMA requests atomically to ensure sync */
+    spi_dma_enable(SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_DMA_TRANSMIT);
-    spi_enable();
+
+    if (from_isr == 0)
+        sys_exit_critical();
+
+    /* CRITICAL: Small delay to ensure DMA hardware is fully ready before Master starts sending
+     * Without this, if Master responds too quickly after handshake, first clock cycle
+     * may arrive before DMA captures it, causing rx:5/6 timeout */
+    if (from_isr == 0) {
+        sys_us_delay(5);
+    }
 }
 
 FlagStatus spi_nss_status_get(void)
@@ -284,40 +303,39 @@ void spi_handshake_gpio_config(void)
 {
     /* SPI trigger GPIO config:PA5 */
     gpio_mode_set(SPI_HANDSHAKE_GPIO, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI_HANDSHAKE_PIN);
-    gpio_output_options_set(SPI_HANDSHAKE_GPIO, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, SPI_HANDSHAKE_PIN);
+    gpio_output_options_set(SPI_HANDSHAKE_GPIO, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, SPI_HANDSHAKE_PIN);
     gpio_bit_reset(SPI_HANDSHAKE_GPIO, SPI_HANDSHAKE_PIN);
 }
 
-/*!
-    \brief      toggle the GPIO high to start transmit
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void spi_handshake_gpio_pull_high(void)
+#ifdef CONFIG_SPI_3_WIRED
+void spi_nss_gpio_config(void)
 {
-    gpio_bit_set(SPI_HANDSHAKE_GPIO, SPI_HANDSHAKE_PIN);
+    /* SPI trigger GPIO config:PA5 */
+    gpio_mode_set(SPI_NSS_GPIO, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI_NSS_PIN);
+    gpio_output_options_set(SPI_NSS_GPIO, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, SPI_NSS_PIN);
+    gpio_bit_reset(SPI_NSS_GPIO, SPI_NSS_PIN);
 }
 
-/*!
-    \brief      toggle the GPIO low to end transmit
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void spi_handshake_gpio_pull_low(void)
+void spi_nss_rising_trigger(bool from_isr)
 {
-    gpio_bit_reset(SPI_HANDSHAKE_GPIO, SPI_HANDSHAKE_PIN);
+    /* CRITICAL: Move printf OUTSIDE critical section to avoid blocking in ISR context */
+    if (from_isr == 0) {
+        sys_enter_critical();
+    }
+    gpio_bit_set(SPI_NSS_GPIO, SPI_NSS_PIN);
+    sys_us_delay(30);
+    gpio_bit_reset(SPI_NSS_GPIO, SPI_NSS_PIN);
+    if (from_isr == 0)
+        sys_exit_critical();
 }
+#endif
 
 void spi_handshake_rising_trigger(void)
 {
     sys_enter_critical();
-
     gpio_bit_set(SPI_HANDSHAKE_GPIO, SPI_HANDSHAKE_PIN);
-    sys_us_delay(30);
+    sys_us_delay(50);
     gpio_bit_reset(SPI_HANDSHAKE_GPIO, SPI_HANDSHAKE_PIN);
-
     sys_exit_critical();
 }
 #endif

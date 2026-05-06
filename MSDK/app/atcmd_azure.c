@@ -31,7 +31,7 @@ WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWIS
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 OF SUCH DAMAGE.
 */
-#include "app_cfg.h"
+#include <app_cfg.h>
 
 #ifdef CONFIG_AZURE_F527_DEMO_SUPPORT
 #include "sample_azure_iot_f527_api.h"
@@ -345,7 +345,7 @@ static void cb_connect_fail(void *eloop_data, void *user_ctx)
     }
 
     atcmd_wifi_conn_rsp(result);
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL, cb_connect_fail);
 }
 
 void at_azure_wifi_connect(int argc, char **argv)

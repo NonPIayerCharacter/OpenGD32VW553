@@ -684,7 +684,7 @@ int rf_power_on(void)
     // Reset and enable RF PU
     rf_rcc_config();
 
-    // Enable RF PLL
+    // rf reg adjuct for different crystal freq, rf pll enable is in system_clock_config().
     rf_enable_pll(HXTAL_VALUE / 1000000);
 
     rf_pmu_par_config();
@@ -879,7 +879,9 @@ static void platform_uart_init()
 {
     uart_driver_init();
 
+#ifdef LOG_UART
     log_uart_init();
+#endif
 
 #ifdef CFG_BLE_HCI_MODE
     ble_uart_init();

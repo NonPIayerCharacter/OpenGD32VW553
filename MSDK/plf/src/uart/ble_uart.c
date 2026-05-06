@@ -71,7 +71,11 @@ void hci_uart_read_handler(void)
             // Call handler
             callback(data, 0);
 
-            ble_stack_task_resume(true);
+            if (__get_CONTROL() == 1) {
+                ble_stack_task_resume(true);
+            } else {
+                ble_stack_task_resume(false);
+            }
         }
 
         if (hci_uart_index == current_index) {

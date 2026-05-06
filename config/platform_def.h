@@ -51,18 +51,19 @@ OF SUCH DAMAGE.
 #endif
 
 // board type
-#define PLATFORM_BOARD_32VW55X_START    0
-#define PLATFORM_BOARD_32VW55X_EVAL     1
-#define PLATFORM_BOARD_32VW55X_F527     2
+#define PLATFORM_BOARD_32VW55X_START    1
+#define PLATFORM_BOARD_32VW55X_EVAL     2
+#define PLATFORM_BOARD_32VW55X_F527     3
+#define PLATFORM_BOARD_32VW55X_SONIC    4
 
 #ifdef CONFIG_PLATFORM_ASIC
 #define CONFIG_BOARD                    PLATFORM_BOARD_32VW55X_START
 #endif
 
 // RF type
-#define RF_GDM32106                     0
-#define RF_GDM32110                     1
-#define RF_GDM32103                     2
+#define RF_GDM32106                     1
+#define RF_GDM32110                     2
+#define RF_GDM32103                     3
 
 #ifdef CONFIG_PLATFORM_ASIC
 #define CONFIG_RF_TYPE                  RF_GDM32103
@@ -71,8 +72,9 @@ OF SUCH DAMAGE.
 #endif
 
 // CRYSTAL type
-#define CRYSTAL_26M                     0
-#define CRYSTAL_40M                     1
+#define CRYSTAL_26M                     1
+#define CRYSTAL_40M                     2
+#define CRYSTAL_48M                     3
 #define PLATFORM_CRYSTAL                CRYSTAL_40M
 
 // Wireless mode
@@ -85,6 +87,10 @@ OF SUCH DAMAGE.
 // Flag indicating if NVDS FLASH feature is supported or not
 #define NVDS_FLASH_SUPPORT              1
 
-// Ext flash memory size
-#define QSPI_FLASH_MEM                  2     //2: 2M, 16: 16M
+// Ext flash memory size 2: 2M, 16: 16M, 32:32M
+#if CONFIG_BOARD == PLATFORM_BOARD_32VW55X_SONIC
+#define QSPI_FLASH_MEM                  32
+#elif CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL
+#define QSPI_FLASH_MEM                  2
+#endif
 #endif /* _PLATFORM_DEF_H */

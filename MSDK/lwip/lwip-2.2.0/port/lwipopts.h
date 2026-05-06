@@ -44,6 +44,14 @@ extern "C" {
 
 // #define LWIP_DEBUG
 
+#ifdef CONFIG_NAPT
+#define IP_NAPT                     1
+#define IP_FORWARD                  1
+#define IP_NAPT_MAX                 64
+// #define IP_NAPT_PORTMAP             1
+#define IP_PORTMAP_MAX              128
+#endif
+
 #ifdef CONFIG_MQTT
 #define LWIP_MQTT
 #define LWIP_SSL_MQTT
@@ -61,7 +69,7 @@ extern "C" {
 
 #define TCPIP_MBOX_SIZE               10
 #if defined(LWIP_SSL_MQTT) || defined(CONFIG_ATCMD_HTTP_CLIENT)
-#define TCPIP_THREAD_STACKSIZE        1024 // 1024
+#define TCPIP_THREAD_STACKSIZE        1536 // 1024
 #else
 #define TCPIP_THREAD_STACKSIZE        416 //448 // 1024
 #endif
@@ -187,6 +195,8 @@ extern "C" {
 
 #define LWIP_STATS                    0
 #define LWIP_STATS_DISPLAY            0
+
+#define LWIP_NETIF_HOSTNAME           1
 
 #ifdef CONFIG_AZURE_IOT_SUPPORT
 #define LWIP_SO_SNDTIMEO              1
@@ -328,6 +338,12 @@ void sntp_set_system_time(uint32_t sec);
 
 //#define MEMP_NUM_SYS_TIMEOUT (LWIP_NUM_SYS_TIMEOUT_INTERNAL + SYS_TIMER_BUF_FOR_MQTT)
 
+#endif /* CONFIG_MQTT */
+
+#ifdef CONFIG_COAP
+#define SYS_TIMER_BUF_FOR_COAP      2
+#else
+#define SYS_TIMER_BUF_FOR_COAP      0
 #endif
 
 #ifndef SYS_TIMER_BUF_FOR_AZURE
@@ -346,16 +362,24 @@ void sntp_set_system_time(uint32_t sec);
 #define SYS_TIMER_BUF_FOR_SNTP      0
 #endif
 
+#ifdef CONFIG_NAPT
+#define SYS_TIMER_BUF_FOR_NATP      1
+#else
+#define SYS_TIMER_BUF_FOR_NATP      0
+#endif
+
+#define MEMP_NUM_SYS_TIMEOUT    ( LWIP_NUM_SYS_TIMEOUT_INTERNAL \
+                                + SYS_TIMER_BUF_FOR_AZURE       \
+                                + SYS_TIMER_BUF_FOR_MQTT        \
+                                + SYS_TIMER_BUF_FOR_SNTP        \
+                                + SYS_TIMER_BUF_FOR_COAP        \
+                                + SYS_TIMER_BUF_FOR_NATP        \
+                                + LWIP_IPV6_DHCP6 )
+
 #ifdef CONFIG_SOFTAP_PROVISIONING
 #define LWIP_HTTPD_SUPPORT_POST         1
 #define HTTPD_FSDATA_FILE               "httpd_resource.c"
 #endif
-
-#define MEMP_NUM_SYS_TIMEOUT        ( LWIP_NUM_SYS_TIMEOUT_INTERNAL \
-                                    + SYS_TIMER_BUF_FOR_AZURE \
-                                    + SYS_TIMER_BUF_FOR_MQTT \
-                                    + SYS_TIMER_BUF_FOR_SNTP \
-                                    + LWIP_IPV6_DHCP6 )
 
 #ifdef CFG_SOFTAP_MANY_CLIENTS
 #undef MEMP_NUM_NETCONN

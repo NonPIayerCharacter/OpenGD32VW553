@@ -74,6 +74,9 @@ extern "C" {
 
 #define BLE_GAP_ADV_SCAN_UNIT(_ms)      ((_ms) * 8 / 5)
 
+/* Advertising_Tx_Power, Host has no preference */
+#define BLE_GAP_ADV_TX_PWR_NO_PREF              (127)
+
 /* BLE privacy mode */
 #define BLE_GAP_PRIVACY_MODE_OFF                    0x00 /*!< No privacy, only use identity address */
 #define BLE_GAP_PRIVACY_MODE_DEVICE_PRIVACY         0x01 /*!< Use device privacy, accept both the peer's identity address and resolvable private address*/

@@ -56,5 +56,12 @@ OF SUCH DAMAGE.
 #define CONFIG_NEED_RSA_4096
 #endif
 
+#ifdef CFG_BLE_SUPPORT
+#undef CFG_BLE_SUPPORT
+#endif
+
+#ifdef CFG_COEX
+#undef CFG_COEX
+#endif
 
 #endif  /* _APP_CFG_H_ */

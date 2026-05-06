@@ -67,6 +67,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * Copyright (c) 2025, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -111,6 +112,7 @@
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
 #include "lwip/nd6.h"
+#include "lwip/ip4_napt.h" /* GD modified */
 
 #include <string.h>
 
@@ -1023,6 +1025,14 @@ again:
   if (tcp_port == TCP_LOCAL_PORT_RANGE_END) {
     tcp_port = TCP_LOCAL_PORT_RANGE_START;
   }
+/* GD modified */
+#if IP_NAPT
+  if (ip_napt_find_port(IP_PROTO_TCP, PP_NTOHS(tcp_port))) {
+    /* If NAPT is enabled, skip the ports used by NAPT */
+    goto again;
+  }
+#endif
+/* GD modified end */
   /* Check all PCB lists. */
   for (i = 0; i < NUM_TCP_PCB_LISTS; i++) {
     for (pcb = *tcp_pcb_lists[i]; pcb != NULL; pcb = pcb->next) {

@@ -54,7 +54,7 @@ OF SUCH DAMAGE.
 /// UDP buffer length
 #define IPERF_DEFAULT_UDPBUFLEN         1472            // read/write 1472 bytes (-u)
 /// Number of IPERF send buffers (credits)
-#define IPERF_SEND_BUF_CNT              8
+#define IPERF_SEND_BUF_CNT              32
 
 /// Type of traffic generation
 enum iperf_test_mode

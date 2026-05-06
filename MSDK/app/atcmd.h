@@ -43,7 +43,7 @@ OF SUCH DAMAGE.
 #define AT_UART_BAUDRATE            2000000//115200//2000000
 #endif
 
-//#define CONFIG_ATCMD_DEBUG
+// #define CONFIG_ATCMD_DEBUG
 #ifdef CONFIG_ATCMD_DEBUG
 #define AT_TRACE                      app_print
 //#define AT_TRACE(fmt, ...)          at_print(fmt, ## __VA_ARGS__)
@@ -183,11 +183,14 @@ void at_uart_rx_dma_irq_hdl(uint32_t dma_channel);
 int atcmd_ble_init(void);
 int atcmd_ble_deinit(void);
 uint32_t at_dma_get_cur_received_num(uint32_t size);
+void spi_manager_state_set(uint8_t state);
+int at_hw_dma_receive(uint32_t address, uint32_t num);
+void at_spi_rcv_atcmd_config(bool from_isr);
 
 #ifdef CONFIG_ATCMD_SPI
 void at_spi_rx_dma_irq_hdl(uint32_t dma_channel);
 void at_spi_tx_dma_irq_hdl(uint32_t dma_channel);
 int at_spi_hw_is_idle(void);
-
 #endif /* CONFIG_ATCMD_SPI */
+
 #endif // _ATCMD_H_

@@ -2172,6 +2172,14 @@ void wifi_wpa_rx_mgmt_cb(struct wifi_frame_info *info, void *arg)
         }
     } else if (wvif->wvif_type == WVIF_AP) {
         uint8_t frm_info_len = sizeof(struct wifi_frame_info);
+        struct ieee80211_mgmt *mgmt;
+        mgmt = (struct ieee80211_mgmt *)(info->payload);
+
+        // ignore when management frame subtype is 0xF(Reserved)
+        if ( (((mgmt->frame_control & 0x000c) >> 2) == 0) && (((mgmt->frame_control & 0x00f0) >> 4) == 0xf) ) {
+            return;
+        }
+
         frm = sys_malloc(frm_info_len + info->length);
         if (frm) {
             sys_memcpy(frm, info, frm_info_len);
@@ -2193,6 +2201,20 @@ int wifi_wpa_eapol_to_vif_idx(struct wpas_eapol *eapol)
     //printf("eapol = %p, sta = %p, wvif %p, wifi_vif_tab[0] %p, wifi_vif_tab[1] %p\r\n",
     //        eapol, sta, wvif, &wifi_vif_tab[0], &wifi_vif_tab[1]);
     return vif_idx;
+}
+
+uint16_t wifi_wpa_get_disconnect_reason(void)
+{
+    struct wifi_vif_tag *wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(WIFI_VIF_INDEX_STA_MODE);
+
+    return wvif->sta.reason_code;
+}
+
+uint16_t wifi_wpa_get_connect_fail_status(void)
+{
+    struct wifi_vif_tag *wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(WIFI_VIF_INDEX_STA_MODE);
+
+    return wvif->sta.status_code;
 }
 
 int wifi_wpa_sae_to_vif_idx(struct wpas_sae *sae)
@@ -2454,9 +2476,13 @@ int wifi_wpa_send_wps_cred_event(int vif_idx, struct wps_credential *cred)
         ev_cred->passphrase_len = cred->key_len;
     }
 
-    return eloop_message_send(vif_idx, WIFI_MGMT_EVENT_WPS_CRED,
-                            0,
-                            (uint8_t *)ev_cred, ev_cred_len);
+    if (eloop_message_send(vif_idx, WIFI_MGMT_EVENT_WPS_CRED,
+                            0,(uint8_t *)ev_cred, ev_cred_len)) {
+        sys_mfree(ev_cred);
+        return -1;
+    }
+
+    return 0;
 }
 
 int wifi_wpa_send_wps_success_event(int vif_idx)
@@ -2828,6 +2854,13 @@ uint32_t wifi_wpa_ap_cfg_akm_get(struct wpas_ap *w_ap)
     return ap->cfg.akm;
 }
 
+uint8_t wifi_wpa_ap_cfg_max_conn_get(struct wpas_ap *w_ap)
+{
+    struct wifi_ap *ap = (struct wifi_ap *)((uint32_t)w_ap - offsetof(struct wifi_ap, w_ap));
+
+    return ap->cfg.max_conn;
+}
+
 int wifi_wpa_send_connect_fail_event(int vif_idx)
 {
     return eloop_message_send(vif_idx, WIFI_MGMT_EVENT_CONNECT_FAIL,
@@ -3045,6 +3078,7 @@ unexpected_events:
     return 0;
 }
 
+#ifdef CONFIG_IEEE80211R
 void *wifi_wpa_sta_ft_params_get(struct wpas_eapol *eapol)
 {
     struct wifi_sta *sta = (struct wifi_sta *)((uint32_t)eapol - offsetof(struct wifi_sta, w_eapol));
@@ -3138,6 +3172,7 @@ int wifi_wpa_ft_reassociate_done(int vif_idx, void *ind_param)
 
     return ret;
 }
+#endif /* CONFIG_IEEE80211R */
 
 #ifdef CFG_SOFTAP
 int wifi_wpa_ap_sm_step(int vif_idx, uint16_t event, uint8_t *data, uint32_t data_len)
@@ -3145,6 +3180,7 @@ int wifi_wpa_ap_sm_step(int vif_idx, uint16_t event, uint8_t *data, uint32_t dat
     struct wifi_vif_tag *wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(vif_idx);
     struct wifi_ap *ap;
     int ret = 0;
+    uint16_t deauth_reason = WLAN_REASON_DEAUTH_LEAVING;
 
     if (NULL == wvif)
         return -1;
@@ -3178,7 +3214,10 @@ int wifi_wpa_ap_sm_step(int vif_idx, uint16_t event, uint8_t *data, uint32_t dat
                 ap_mgmt_tx_cb_handler(&ap->w_ap, (data + 1), (data_len - 1), data);
                 break;
             case WIFI_MGMT_EVENT_STOP_AP_CMD:
-                ret = wpas_ap_stop(vif_idx);
+                if (data != NULL && data_len == 2) {
+                    deauth_reason = (data[0] | (data[1] << 8));
+                }
+                ret = wpas_ap_stop(vif_idx, deauth_reason);
                 break;
             default:
                 goto unexpected_events;
@@ -3187,7 +3226,7 @@ int wifi_wpa_ap_sm_step(int vif_idx, uint16_t event, uint8_t *data, uint32_t dat
         switch (event)
         {
             case WIFI_MGMT_EVENT_STOP_AP_CMD:
-                ret = wpas_ap_stop(vif_idx);
+                ret = wpas_ap_stop(vif_idx, deauth_reason);
                 break;
             default:
                 goto unexpected_events;

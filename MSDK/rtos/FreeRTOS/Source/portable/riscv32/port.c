@@ -503,7 +503,7 @@ void xPortSysTickHandler(void)
 __attribute__((weak)) void vPortSuppressTicksAndSleep(TickType_t xExpectedIdleTime)
 {
     uint32_t ulReloadValue, ulCompleteTickPeriods, ulCompletedSysTickDecrements;
-    volatile TickType_t xModifiableIdleTime, XLastLoadValue;//xTickCountBeforeSleep
+    volatile TickType_t xModifiableIdleTime, XLastLoadValue, XLastCmpValue;
 
     FREERTOS_PORT_DEBUG("Enter TickLess %d\n", (uint32_t)xExpectedIdleTime);
 
@@ -547,13 +547,15 @@ __attribute__((weak)) void vPortSuppressTicksAndSleep(TickType_t xExpectedIdleTi
             ulReloadValue -= ulStoppedTimerCompensation;
         }
 
-        // xTickCountBeforeSleep = xTaskGetTickCount();
+        /* Get System timer load value before sleep */
+        XLastLoadValue = SysTimer_GetLoadValue();
+        XLastCmpValue = SysTimer_GetCompareValue();
+        if (XLastCmpValue > XLastLoadValue) {
+            ulReloadValue += XLastCmpValue - XLastLoadValue;
+        }
 
         /* Set the new reload value. */
         SysTick_Reload(ulReloadValue);
-
-        /* Get System timer load value before sleep */
-        XLastLoadValue = SysTimer_GetLoadValue();
 
         /* Restart SysTick. */
         SysTimer_Start();

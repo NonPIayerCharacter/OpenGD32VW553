@@ -1,8 +1,6 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-add_library(mbedtls_api INTERFACE)
-
 add_library(mbedtls)
 
 if (CONFIG_MBEDTLS_VERSION STREQUAL "2.17.0")
@@ -24,10 +22,8 @@ if (CONFIG_MBEDTLS_VERSION STREQUAL "2.17.0")
             demo/ssl_certs.c
     )
 
-
-    target_include_directories(mbedtls_api
-        INTERFACE
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/mbedtls-2.17.0-ssl/include>
+    set(MBEDTLS_INCLUDE_REL_PATHS
+        mbedtls-2.17.0-ssl/include
     )
 
 else ()
@@ -149,22 +145,24 @@ else ()
             demo/ssl_certs.c
     )
 
-
-    target_include_directories(mbedtls_api
-        INTERFACE
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/include>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/library>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/tests/include/spe>
+    set(MBEDTLS_INCLUDE_REL_PATHS
+        mbedtls/include
+        mbedtls/library
+        mbedtls/tests/include/spe
     )
 endif()
 
+msdk_agg_api(mbedtls_api ${MBEDTLS_INCLUDE_REL_PATHS})
+
 target_link_libraries(mbedtls
-    mbedtls_api
-    lwIP_api
-    riscv_api
-    rtos_api
-    bsp_api
+    PUBLIC
+        mbedtls_api
+    PRIVATE
+        lwIP_api
+        riscv_api
+        rtos_api
+        bsp_api
 )
 
-add_lib_api(mbedtls_api)
-add_lib(mbedtls)
+msdk_agg_module(mbedtls)
+

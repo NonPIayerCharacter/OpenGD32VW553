@@ -1,8 +1,6 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-add_library(gd32vw55x_peripheral_api INTERFACE)
-
 add_library(gd32vw55x_peripheral)
 
 target_sources(gd32vw55x_peripheral
@@ -38,14 +36,15 @@ target_sources(gd32vw55x_peripheral
 
 )
 
-target_include_directories(gd32vw55x_peripheral_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Include>
+set(PERI_INCLUDE_REL_PATHS
+    Include
 )
+
+msdk_agg_api(gd32vw55x_peripheral_api ${PERI_INCLUDE_REL_PATHS})
 
 target_link_libraries(gd32vw55x_peripheral
     gd32vw55x_peripheral_api
 )
 
-add_lib_api(gd32vw55x_peripheral_api)
-add_lib(gd32vw55x_peripheral)
+
+msdk_agg_module(gd32vw55x_peripheral)

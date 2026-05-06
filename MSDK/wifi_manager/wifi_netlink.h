@@ -115,7 +115,7 @@ int wifi_netlink_joined_ap_load(int vif_idx);
 int wifi_netlink_ps_mode_set(int vif_idx, uint8_t psmode);
 int wifi_netlink_enable_vif_ps(int vif_idx);
 int wifi_netlink_ap_start(int vif_idx, struct ap_cfg *cfg);
-int wifi_netlink_ap_stop(int vif_idx);
+int wifi_netlink_ap_stop(int vif_idx, uint16_t deauth_reason);
 
 int wifi_netlink_channel_set(uint32_t channel);
 int wifi_netlink_monitor_start(int vif_idx, struct wifi_monitor *cfg);

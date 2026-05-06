@@ -40,6 +40,8 @@ OF SUCH DAMAGE.
 #ifdef USE_QSPI_FLASH
 #if (QSPI_FLASH_MEM == 16)
 #define FATFS_FULL_MEM_SIZE         (0x1000000)
+#elif (QSPI_FLASH_MEM == 32)
+#define FATFS_FULL_MEM_SIZE         (0x2000000)
 #else
 #define FATFS_FULL_MEM_SIZE         (0x200000)
 #endif

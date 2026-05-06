@@ -72,7 +72,6 @@ char atcmd_rsp[256];
 
 char *spi_master_send_array = NULL;
 char *exit_passth_str = "+++";
-int fd = -1;
 #define SEND_LEN 2048
 os_sema_t spi_data_sema = NULL;
 os_sema_t spi_slave_ready_sema = NULL;
@@ -187,13 +186,14 @@ Retry_wifi_connect:
         goto Retry_wifi_connect;
     }
     sys_memset(&recv_info, 0, sizeof(at_cmd_recv_info_t));
+    sys_ms_sleep(100);
 
     /*
     * 4. Start TCP client
     */
     app_print("Start TCP client.\r\n");
     sys_memset(atcmd, 0, ATCMD_FIXED_LEN);
-    cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPSTART=\"TCP\",\"%s\",%d,0",
+    cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPSTART=0,\"TCP\",\"%s\",%d,0",
                             TCP_SERVER_IP, TCP_SERVER_PORT);
 Retry_tcp_connect:
     ret = at_cmd_post_wait_rsp(atcmd, cmd_len, NULL, 0, &recv_info);
@@ -202,39 +202,41 @@ Retry_tcp_connect:
         sys_ms_sleep(3000);
         goto Retry_tcp_connect;
     }
-    //rsp format: fd,OK or ERROR
-    fd = recv_info.ack[0] - '0';
-    if (fd < 0 || fd > 10) {
-        app_print("Invalid TCP connection fd: %d\r\n", fd);
-        goto Exit;
+    sys_memset(&recv_info, 0, sizeof(at_cmd_recv_info_t));
+
+    sys_ms_sleep(20);
+    /* 5.1 Switch to normal mode */
+    sys_memset(atcmd, 0, ATCMD_FIXED_LEN);
+    cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPMODE=0");
+
+    ret = at_cmd_post_wait_rsp(atcmd, cmd_len, NULL, 0, &recv_info);
+    if (ret < 0 || strstr(recv_info.ack, "ERROR")) {
+        app_print("Switch to normal mode failed (ret %d).\r\n", ret);
+    }
+    sys_memset(&recv_info, 0, sizeof(at_cmd_recv_info_t));
+
+    sys_ms_sleep(20);
+
+    /* 5.2 Open cipmux */
+    sys_memset(atcmd, 0, ATCMD_FIXED_LEN);
+    cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPMUX=1");
+
+    ret = at_cmd_post_wait_rsp(atcmd, cmd_len, NULL, 0, &recv_info);
+    if (ret < 0 || strstr(recv_info.ack, "ERROR")) {
+        app_print("Open cipmux failed (ret %d).\r\n", ret);
     }
     sys_memset(&recv_info, 0, sizeof(at_cmd_recv_info_t));
 
     /* 5. Start SPI ATCMD Test */
     for (i = 0; i < TEST_ROUND; i++) {
-        sys_ms_sleep(2000); //10
+        sys_ms_sleep(200); //10
 #ifdef SPI_MASTER_DEBUG_PRINT
         app_print("===== SPI Master test atcmd [%d] =====\r\n", i);
 #endif
-        /* 5.1 Switch to normal mode */
-        sys_memset(atcmd, 0, ATCMD_FIXED_LEN);
-        cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPMODE=0");
-
-#ifdef SPI_MASTER_DEBUG_PRINT
-        app_print("---%s test---\r\n", atcmd);
-#endif
-        ret = at_cmd_post_wait_rsp(atcmd, cmd_len, NULL, 0, &recv_info);
-        if (ret < 0 || strstr(recv_info.ack, "ERROR")) {
-            app_print("Switch to normal mode failed (ret %d).\r\n", ret);
-            break;
-        }
-        sys_memset(&recv_info, 0, sizeof(at_cmd_recv_info_t));
-
         /* 5.1 Send data to tcp server in normal mode */
         sys_memset(atcmd, ATCMD_FIXED_LEN, 0);
-
 #if 1
-        cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPSEND=%d,%d", fd, SEND_LEN);
+        cmd_len = co_snprintf(atcmd, ATCMD_FIXED_LEN, "AT+CIPSEND=0,%d", SEND_LEN);
 #ifdef SPI_MASTER_DEBUG_PRINT
         app_print("---%s test---\r\n", atcmd);
 #endif
@@ -247,8 +249,8 @@ Retry_tcp_connect:
 #else
         /* 5.2 Send data to TCP server in File Transfer mode */
         sys_memset(atcmd, 0, ATCMD_MAX_LEN);
-        cmd_len = co_snprintf(atcmd, ATCMD_MAX_LEN, "AT+CIPSDFILE=%d,%d,%d",
-                                fd, FILE_TOTAL_LEN, FILE_SEGMENT_LEN);
+        cmd_len = co_snprintf(atcmd, ATCMD_MAX_LEN, "AT+CIPSDFILE=0,%d,%d",
+                                FILE_TOTAL_LEN, FILE_SEGMENT_LEN);
         app_print("---%s test---\r\n", atcmd);
         ret = at_cmd_post_wait_rsp(atcmd, cmd_len, (uint8_t *)spi_master_send_array, FILE_TOTAL_LEN, &recv_info);
 
@@ -258,15 +260,13 @@ Retry_tcp_connect:
         }
 #endif
     }
-Exit:
 
-    if (fd >= 0) {
-        /* 6 Close TCP connection */
-        app_print("Close TCP connection.\r\n");
-        sys_memset(atcmd, ATCMD_MAX_LEN, 0);
-        co_snprintf(atcmd, ATCMD_MAX_LEN, "AT+CIPCLOSE=%d", fd);
-        at_spi_send_cmd_wait_rsp(atcmd, strlen(atcmd), atcmd_rsp, sizeof(atcmd_rsp));
-    }
+    /* 6 Close TCP connection */
+    app_print("Close TCP connection.\r\n");
+    sys_memset(atcmd, ATCMD_MAX_LEN, 0);
+    co_snprintf(atcmd, ATCMD_MAX_LEN, "AT+CIPCLOSE=0");
+    at_spi_send_cmd_wait_rsp(atcmd, strlen(atcmd), atcmd_rsp, sizeof(atcmd_rsp));
+
 
     app_print("=====SPI Test End, PASS: %d, Fail: %d.=====\r\n", i, TEST_ROUND - i);
     sys_task_delete(NULL);
@@ -359,7 +359,7 @@ static void spi_master_tcp_recv_task(void *param)
                 break;
             } else {
                 if (recv_info.rx_buffer != NULL) {
-                    // app_print("recv data, len:%d\r\n", recv_info.rx_buffer_len);
+                    app_print("recv data, len:%d\r\n", recv_info.rx_buffer_len);
                     sys_mfree(recv_info.rx_buffer);
                 } else {
                     if (recv_info.status == -1)
@@ -434,7 +434,6 @@ Exit:
 
 int main(void)
 {
-    sys_os_init();
     platform_init();
 
 #if (SPI_ROLE == SPI_ROLE_MASTER)

@@ -57,6 +57,14 @@ target_add_scatter_file(${TARGET_EXE}
     ${TARGET_PROJECT_DIR}/eclipse/mbl.ld
 )
 
+target_link_directories(${TARGET_EXE}
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../lib
+)
+
+target_link_libraries(${TARGET_EXE}
+    PRIVATE
+        mbl
+)
 
 target_link_options(${TARGET_EXE}
     PUBLIC

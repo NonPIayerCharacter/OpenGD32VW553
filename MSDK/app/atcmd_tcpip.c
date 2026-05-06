@@ -93,6 +93,14 @@ void cip_info_init(void)
     cip_task_terminate = 0;
 
     sys_memset(&cip_info, 0, sizeof(cip_info));
+
+#ifdef CONFIG_ATCMD_SPI
+    if (cip_info.list_lock == NULL) {
+        list_init(&cip_info.recv_data_list);
+        sys_mutex_init(&cip_info.list_lock);
+    }
+#endif
+
     cip_info.trans_intvl = CIP_TRANSFER_INTERVAL_DEFAULT; //ms
     cip_info.local_srv_fd = -1;
     for (i = 0; i < MAX_CLIENT_NUM; i++) {
@@ -187,22 +195,29 @@ static void cip_info_cli_free(int index)
 {
     if ((index >= 0) && (index < MAX_CLIENT_NUM)) {
         if (cip_info.cli[index].fd != -1) {
-#ifdef CONFIG_ATCMD_SPI
-            struct recv_data_node *p_item;
-            sys_mutex_get(&cip_info.cli[index].list_lock);
-            p_item = (struct recv_data_node *)list_pick(&cip_info.cli[index].recv_data_list);
-
+    #ifdef CONFIG_ATCMD_SPI
+            // free recv data list node for this fd
+            struct recv_data_node *p_item, *p_next, *p_prev;
+            sys_mutex_get(&cip_info.list_lock);
+            p_prev = NULL;
+            p_item = (struct recv_data_node *)list_pick(&cip_info.recv_data_list);
             while (p_item != NULL) {
-                if (p_item->data && (p_item->data_len > 0)) {
-                    sys_mfree(p_item->data);
+                p_next = (struct recv_data_node *)list_next(&p_item->list_hdr);
+                if (p_item->fd == cip_info.cli[index].fd) {
+                    if (p_item->data && (p_item->data_len > 0)) {
+                        sys_mfree(p_item->data);
+                    }
+                    list_remove(&cip_info.recv_data_list, (struct list_hdr *)p_prev, (struct list_hdr *)p_item);
+                    cip_info.list_data_count--;
                     sys_mfree(p_item);
+                } else {
+                    p_prev = p_item;
                 }
-                list_remove(&cip_info.cli[index].recv_data_list, NULL, (struct list_hdr *)p_item);
-                p_item = (struct recv_data_node *)list_pick(&cip_info.cli[index].recv_data_list);
+                p_item = p_next;
             }
-            sys_mutex_free(&cip_info.cli[index].list_lock);
-#endif
-            sys_memset(&cip_info.cli[index], 0, sizeof(cip_info.cli[index]));
+            sys_mutex_put(&cip_info.list_lock);
+    #endif /* CONFIG_ATCMD_SPI */
+            sys_memset(&cip_info.cli[index], 0, sizeof(client_info_t));
             cip_info.cli[index].fd = -1;
             cip_info.cli_num--;
         }
@@ -312,6 +327,8 @@ static int tcp_client_start(int con_id, char *srv_ip, uint16_t srv_port, uint32_
         return -1;
 #endif
 
+    cip_info.tcp_udp_start_process_num ++;
+
     sys_memset(&saddr, 0, len);
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(srv_port);
@@ -321,7 +338,8 @@ static int tcp_client_start(int con_id, char *srv_ip, uint16_t srv_port, uint32_
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         AT_TRACE("Create tcp client socket fd error!\r\n");
-        return -1;
+        ret = -1;
+        goto Exit;
     }
     nodelay = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
@@ -353,17 +371,21 @@ static int tcp_client_start(int con_id, char *srv_ip, uint16_t srv_port, uint32_
     idx = cip_info_cli_store(con_id, fd, "TCP", CIP_ROLE_CLIENT,
                             srv_ip_int, srv_port, ntohs(saddr.sin_port));
     if (idx < 0) {
-        AT_TRACE("Save client info failed!\r\n");
+        AT_TRACE("Client num reached the maximum!\r\n");
         ret = -3;
         goto Exit;
     }
     AT_TRACE("TCP: create socket %d.\r\n", fd);
     cip_passth_info.passth_fd_idx = idx;
 
+    cip_info.tcp_udp_start_process_num --;
+
     return 0;
 
 Exit:
-    close(fd);
+    cip_info.tcp_udp_start_process_num --;
+    if (fd >= 0)
+        close(fd);
     return ret;
 }
 
@@ -377,9 +399,15 @@ Exit:
 static int at_tcp_send(int fd, uint32_t tx_len)
 {
     char *tx_buf = NULL;
-    int cnt = 0;
+    int cnt = 0, dma_ret = 0;
     int retry_cnt = 10;
     struct at_local_tcp_send send_data;
+
+    /* CRITICAL: Check if cip_recv_task is running and local socket is ready */
+    if (local_sock_send < 0 || cip_task_started == 0) {
+        AT_TRACE("!!!ERR: local_sock=%d, task_started=%d\r\n", local_sock_send, cip_task_started);
+        return -1;
+    }
 
     tx_buf = sys_zalloc(tx_len);
     if (NULL == tx_buf) {
@@ -390,27 +418,47 @@ static int at_tcp_send(int fd, uint32_t tx_len)
     AT_RSP_DIRECT(">\r\n", 3);
 
     // Block here to wait dma receive done
-    at_hw_dma_receive((uint32_t)tx_buf, tx_len);
+    // AT_TRACE("3Bef s%d(3),d%d\r\n", spi_manager.stat, spi_manager.direction);
+    dma_ret = at_hw_dma_receive((uint32_t)tx_buf, tx_len);
+    // AT_TRACE("3Aft s%d,cnt=%d,ret=%d\r\n", spi_manager.stat, tx_len, dma_ret);
+
+    if (dma_ret != 0) {
+        AT_TRACE("!!!DMA_RCV_FAIL: ret=%d, abort send\r\n", dma_ret);
+        sys_mfree(tx_buf);
+        return -1;
+    }
+
+    if (local_sock_send < 0 || cip_task_started == 0) {
+        AT_TRACE("!!!ERR_AFTER_DMA: local_sock=%d, task_started=%d\r\n", local_sock_send, cip_task_started);
+        sys_mfree(tx_buf);
+        return -2;
+    }
+
     send_data.event_id = AT_LOCAL_TCP_SEND_EVENT;
     send_data.sock_fd = fd;
     send_data.send_data_addr = (uint32_t)tx_buf;
     send_data.send_data_len = tx_len;
 
 Retry:
+    if (local_sock_send < 0) {
+        AT_TRACE("!!!ERR_SEND: local_sock closed during retry\r\n");
+        sys_mfree(tx_buf);
+        return -2;
+    }
+
     cnt = sendto(local_sock_send, (void *)&send_data, sizeof(send_data), 0, NULL, 0);
     if (cnt <= 0) {
         if ((errno == EAGAIN || errno == ENOMEM) && retry_cnt > 0) {
             sys_ms_sleep(20);
             retry_cnt--;
+            AT_TRACE("local socket. errno:%d retry_cnt:%d!\r\n", errno, retry_cnt);
             goto Retry;
         }
         sys_mfree(tx_buf);
-        AT_TRACE("local socket send tcp fail. %d!\r\n", errno);
-        AT_RSP_START(10);
-        AT_RSP("SEND FAIL\r\n");
-        AT_RSP_IMMEDIATE();
-        AT_RSP_FREE();
+        AT_TRACE("local socket send tcp fail. %d, local_sock_send:%d!\r\n", errno, local_sock_send);
+        return -2;
     }
+
     return cnt;
 }
 
@@ -622,6 +670,7 @@ static int at_hw_passth_send(int fd, uint8_t type)
             passth_timeout, 0, at_tx_passth_timeout_cb, NULL);
     }
 
+#ifndef SUPER_UART_DMA_RX
     at_hw_dma_receive_config();
 
     at_hw_dma_receive_start((uint32_t)(passth_tx_buf[0]->buf), (uint32_t)(passth_tx_buf[1]->buf), passth_tx_buf[0]->size);
@@ -696,6 +745,26 @@ static int at_hw_passth_send(int fd, uint8_t type)
     uart_irq_callback_unregister(at_uart_conf.usart_periph);
     uart_irq_callback_register(at_uart_conf.usart_periph, at_uart_rx_irq_hdl);
     at_hw_irq_receive_config();
+#else
+    dma_rx_ftf_cnt = 0;
+    uart_rx_idle_flag = 0;
+    passth_tx_buf[0]->readptr = 0;
+    passth_tx_buf[0]->writeptr = 0;
+
+    while (cip_passth_info.terminate_send_passth != 1) {
+        passth_tx_buf[0]->writeptr = at_hw_dma_receive_start((uint32_t)(passth_tx_buf[0]->buf), PASSTH_START_TRANSFER_LEN, cip_info.trans_intvl);
+
+        if (passth_tx_buf[0]->writeptr == 0) {
+            continue;
+        }
+        else {
+            at_passth_send_data(fd, 1, type, 0);
+            passth_tx_buf[0]->readptr = 0;
+            passth_tx_buf[0]->writeptr = 0;
+        }
+    }
+    at_hw_dma_receive_stop();
+#endif
     cip_passth_info_deinit();
     return 0;
 }
@@ -790,7 +859,7 @@ static int at_send_file(int fd_idx, uint32_t file_len, uint32_t segment_len)
         real_len = min(segment_len, remaining_len);
         AT_TRACE("Waiting the %dth data\r\n", loop);
 
-        spi_manager.stat = SPI_Slave_File_Recv;
+        spi_manager_state_set(SPI_Slave_File_Recv);
         spi_manager.direction = SPI_Slave_RX_Dir;
         at_hw_dma_receive((uint32_t)tx_buf, real_len + FILE_SEGMENT_CRC_LEN);
         loop--;
@@ -804,13 +873,12 @@ static int at_send_file(int fd_idx, uint32_t file_len, uint32_t segment_len)
             read_data = ((read_data  << (8 * (4 - remain))) >> (8 * (4 - remain)));
             checksum = crc_single_data_calculate(read_data);
         }
-//        spi_manager.stat = SPI_Slave_File_ACK;
 
         if (checksum == *(uint32_t *)(tx_buf + real_len)) {
             AT_TRACE("CRC Verify OK, %dth\r\n", loop);
             at_file_send_data(fd_idx, tx_buf, real_len);
             if (remaining_len == real_len)
-                spi_manager.stat = SPI_Slave_File_Done;
+                spi_manager_state_set(SPI_Slave_File_Done);
             at_hw_send((char *)ack, 3);
         } else {
             AT_TRACE("CRC Verify fail,  checksum=0x%x vs 0x%x\r\n",
@@ -857,11 +925,14 @@ static int udp_client_start(int con_id, char *srv_ip, uint16_t srv_port, uint16_
         return -1;
 #endif
 
+    cip_info.tcp_udp_start_process_num ++;
+
     /* creating a UDP socket */
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (fd < 0) {
         AT_TRACE("Create udp client socket fd error!\r\n");
-        return -1;
+        ret = -1;
+        goto Exit;
     }
     setsockopt(fd , SOL_SOCKET, SO_REUSEADDR,
             (const char *)&reuse, sizeof(reuse));
@@ -897,10 +968,13 @@ static int udp_client_start(int con_id, char *srv_ip, uint16_t srv_port, uint16_
     else
         cip_passth_info.passth_fd_idx = -1;
 
+    cip_info.tcp_udp_start_process_num --;
     return 0;
 
 Exit:
-    close(fd);
+    cip_info.tcp_udp_start_process_num --;
+    if (fd >= 0)
+        close(fd);
     return ret;
 }
 
@@ -975,7 +1049,7 @@ Retry:
         }
         sys_mfree(tx_buf);
         AT_TRACE("local socket send udp fail. %d!\r\n", errno);
-        AT_RSP_START(10);
+        AT_RSP_START(20);
         AT_RSP("SEND FAIL\r\n");
         AT_RSP_IMMEDIATE();
         AT_RSP_FREE();
@@ -1003,6 +1077,7 @@ static int tcp_udp_server_start(uint8_t type, uint16_t srv_port)
         srv_fd = socket(AF_INET, SOCK_DGRAM, 0);
     }
     if (srv_fd < 0) {
+        AT_TRACE("open socket failed\r\n");
         return -1;
     }
 
@@ -1094,25 +1169,27 @@ static void tcp_udp_server_stop(void)
 /*!
     \brief      process recieved data from socket server and
                 list the data in the client_info_t.
-    \param[in]  idx:    index of which client in cip_info
+    \param[in]  fd:     fd of this data recv from
     \param[in]  rx_buf: buffer that stored recieved data
     \param[in]  recv_sz: recieved data length
     \param[out] none
     \retval     none
 */
-static void at_spi_recv_data_process(int idx, uint8_t *rx_buf, int recv_sz)
+static void at_spi_recv_data_process(int fd, uint8_t *rx_buf, int recv_sz)
 {
     int recv_processed = 0, currentdatasize = 0;
     struct recv_data_node *recv_data_node = NULL;
     uint8_t *data_recv = NULL;
-
-    if (recv_sz > AT_SPI_MAX_DATA_LEN) {
-        AT_TRACE("recv_sz:%d large than 2048.\r\n", recv_sz);
+    int wait_count = 0;
+#define MAX_WAIT_COUNT 100
+#define WAIT_INTERVAL_MS 50
+    if (fd < 0 || cip_task_started != 1) {
+        AT_TRACE("fd less than 0, or cip_recv task not started\r\n");
+        return;
     }
 
-    recv_processed = 0;
     do {
-        recv_data_node = sys_malloc(sizeof(struct recv_data_node));
+        recv_data_node = sys_zalloc(sizeof(struct recv_data_node));
         currentdatasize = (recv_sz - recv_processed) > AT_SPI_MAX_DATA_LEN ? AT_SPI_MAX_DATA_LEN : (recv_sz - recv_processed);
 
         if (recv_data_node == NULL) {
@@ -1123,6 +1200,7 @@ static void at_spi_recv_data_process(int idx, uint8_t *rx_buf, int recv_sz)
         data_recv = sys_malloc(currentdatasize);// for data
         if (data_recv == NULL) {
             AT_TRACE("Allocate data_recv failed (len = %u).\r\n", currentdatasize);
+            sys_mfree(recv_data_node);
             break;
         }
 
@@ -1130,25 +1208,63 @@ static void at_spi_recv_data_process(int idx, uint8_t *rx_buf, int recv_sz)
 
         recv_data_node->data = data_recv;
         recv_data_node->data_len = currentdatasize;
-        // AT_TRACE("idx:%d, list add,len:%d, fd:%d\r\n", idx, currentdatasize, cip_info.cli[i].fd);
-        sys_mutex_get(&cip_info.cli[idx].list_lock);
-        // if data number in list is large than MAX_RECV_DATA_NUM_IN_LIST, delete the first one in the list
-        if (list_cnt(&cip_info.cli[idx].recv_data_list) > MAX_RECV_DATA_NUM_IN_LIST) {
-            struct recv_data_node *p_item;
-            AT_TRACE("data num in list is large than %d, delete the first one\r\n", MAX_RECV_DATA_NUM_IN_LIST);
-            p_item = (struct recv_data_node *)list_pop_front(&cip_info.cli[idx].recv_data_list);
-            sys_mfree(p_item->data);
-            sys_mfree(p_item);
-        }
-        list_push_back(&cip_info.cli[idx].recv_data_list, &recv_data_node->list_hdr);
-        sys_mutex_put(&cip_info.cli[idx].list_lock);
+        // AT_TRACE("list add,len:%d, fd:%d\r\n", currentdatasize, fd);
+        recv_data_node->fd = fd;
+        // block wait, until list have empty node
+        wait_count = 0;
+        while (1) {
+            sys_mutex_get(&cip_info.list_lock);
 
-        recv_processed += currentdatasize;
+            if (cip_info.list_data_count < MAX_RECV_DATA_NUM_IN_LIST) {
+                list_push_back(&cip_info.recv_data_list, &recv_data_node->list_hdr);
+                cip_info.list_data_count++;
+                sys_mutex_put(&cip_info.list_lock);
+                break;
+            }
+
+            sys_mutex_put(&cip_info.list_lock);
+
+            // list full, wait
+            wait_count++;
+            if (wait_count >= MAX_WAIT_COUNT) {
+                AT_TRACE("Wait timeout after %dms, drop NEW packet (len=%d), list=%d, triger_cnt=%d\r\n",
+                        wait_count * WAIT_INTERVAL_MS, currentdatasize, MAX_RECV_DATA_NUM_IN_LIST, cip_info.triger_count);
+                sys_mfree(data_recv);
+                sys_mfree(recv_data_node);
+                recv_processed += currentdatasize;
+                break;
+            }
+            sys_ms_sleep(WAIT_INTERVAL_MS);
+        }
+        if (wait_count <= MAX_WAIT_COUNT) {
+            recv_processed += currentdatasize;
+        }
     } while (recv_processed < recv_sz);
 
     return;
 }
 #endif /* CONFIG_ATCMD_SPI */
+
+int at_uart_write(uint8_t *buffer, uint32_t len)
+{
+    uint8_t *d = buffer;
+
+    if (len == 0 || buffer == NULL) {
+        return -1;
+    }
+
+    while (1) {
+        while (RESET == usart_flag_get(AT_UART, USART_FLAG_TBE));
+        usart_data_transmit(AT_UART, *d++);
+        len--;
+        if (len == 0) {
+            break;
+        }
+    }
+    while (RESET == usart_flag_get(AT_UART, USART_FLAG_TC));
+
+    return 0;
+}
 
 extern int dhcpd_ipaddr_is_valid(uint32_t ipaddr);
 /*!
@@ -1204,6 +1320,16 @@ static void cip_recv_task(void *param)
         AT_TRACE("Create local socket send error!\r\n");
         goto Exit;
     }
+
+    /* Set socket to non-blocking mode to prevent sendto() from blocking
+     * if receiver (cip_recv_task) is not reading fast enough or has exited */
+    {
+        int flags = 1;
+        if (ioctlsocket(local_sock_send, FIONBIO, &flags) < 0) {
+            AT_TRACE("Set local socket non-blocking fail. %d!\r\n", errno);
+        }
+    }
+
     sys_memset(&local_addr_send, 0, sizeof(local_addr_send));
     local_addr_send.sin_family = AF_INET;
     local_addr_send.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -1214,13 +1340,7 @@ static void cip_recv_task(void *param)
     }
 
 #ifdef CONFIG_ATCMD_SPI
-        // init recv data list
-        for (i = 0; i < MAX_CLIENT_NUM; i++) {
-            if (cip_info.cli[i].fd >= 0) {
-                list_init(&cip_info.cli[i].recv_data_list);
-                sys_mutex_init(&cip_info.cli[i].list_lock);
-            }
-        }
+    struct recv_data_node *p_item = NULL;
 #endif
 
     rx_buf = sys_zalloc(rx_len);
@@ -1230,7 +1350,7 @@ static void cip_recv_task(void *param)
     }
 
     timeout.tv_sec = 0;
-    timeout.tv_usec = 200000;
+    timeout.tv_usec = 10000; // 10ms
 
     cip_task_terminate = 0;
     while (1) {
@@ -1277,11 +1397,9 @@ static void cip_recv_task(void *param)
         status = select(max_fd_num + 1, &read_set, NULL, &except_set, &timeout);
         if ((cip_info.local_srv_fd >= 0) && FD_ISSET(cip_info.local_srv_fd, &read_set)) {
             if (cip_info.local_srv_type == CIP_TYPE_TCP) {
-                /* waiting for an incoming TCP connection */
-                /* accepts a connection form a TCP client, if there is any. otherwise returns SL_EAGAIN */
-                cli_fd = accept(cip_info.local_srv_fd,
-                                (struct sockaddr *)&saddr,
-                                (socklen_t*)&addr_sz);
+                sys_memset(&saddr, 0, sizeof(saddr));
+                addr_sz = sizeof(saddr);
+                cli_fd = accept(cip_info.local_srv_fd, (struct sockaddr *)&saddr, (socklen_t*)&addr_sz);
                 if (cip_info.cli_num >= MAX_CLIENT_NUM) {
                     if (cli_fd >= 0) {
                         close(cli_fd);
@@ -1318,7 +1436,6 @@ static void cip_recv_task(void *param)
                                 ling.l_linger = 3; // in seconds
                                 setsockopt(cli_fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(ling));
                             }
-
                             cip_passth_info.passth_fd_idx = status;
                         } else {
                             AT_TRACE("accept error %d!\r\n", errno);
@@ -1327,15 +1444,17 @@ static void cip_recv_task(void *param)
                 }
             } else if (cip_info.local_srv_type == CIP_TYPE_UDP) {
                 sys_memset(rx_buf, 0, rx_len);
+                sys_memset(&saddr, 0, sizeof(saddr));
+                addr_sz = sizeof(saddr);
                 recv_sz = recvfrom(cip_info.local_srv_fd, rx_buf, rx_len, 0, (struct sockaddr *)&saddr, (socklen_t *)&addr_sz);
                 AT_TRACE("udp server recv from %s:%d.\r\n", inet_ntoa(saddr.sin_addr), ntohs(saddr.sin_port));
                 if (recv_sz == 0) {
                     AT_TRACE("remote close %s:%d.\r\n", inet_ntoa(saddr.sin_addr), ntohs(saddr.sin_port));
                 } else if (recv_sz > 0) {
-                    AT_RSP_START(64 + recv_sz);
+                    AT_RSP_START(64);
                     AT_RSP("+IPD,%s:%d, %d: ", inet_ntoa(saddr.sin_addr), ntohs(saddr.sin_port), recv_sz);
-                    for (j = 0; j < recv_sz; j++)
-                        AT_RSP("%c", rx_buf[j]);
+                    AT_RSP_IMMEDIATE();
+                    AT_RSP_DIRECT((char *)rx_buf, recv_sz);
                     AT_RSP("\r\n");
                     AT_RSP_OK();
                 } else {
@@ -1353,18 +1472,38 @@ static void cip_recv_task(void *param)
                 if (*((uint16_t *)local_recv_buf) == AT_LOCAL_TCP_SEND_EVENT) {
                     struct at_local_tcp_send *send_data_local = (struct at_local_tcp_send *)local_recv_buf;
                     AT_RSP_START(128);
+
+                    /* Limited retry mechanism to prevent infinite blocking */
+                    int tcp_retry_count = 0;
+                    #define MAX_RETRIES 60 /* Maximum retry attempts */
+
 TCP_RETRY_SEND:
-                    send_cnt = send(send_data_local->sock_fd, (void *)(send_data_local->send_data_addr), send_data_local->send_data_len, 0);
+                    send_cnt = send(send_data_local->sock_fd, (void *)(send_data_local->send_data_addr),
+                                    send_data_local->send_data_len, MSG_DONTWAIT);
                     if (send_cnt <= 0) {
                         AT_TRACE("send data error. %d!\r\n", errno);
-                        if (errno == EAGAIN || errno == ENOMEM) {
+                        if ((errno == EAGAIN || errno == ENOMEM) && tcp_retry_count < MAX_RETRIES) {
+                            tcp_retry_count++;
+                            sys_ms_sleep(50);
                             goto TCP_RETRY_SEND;
                         }
-                        int idx = cip_info_cli_find(send_data_local->sock_fd);
-                        if ((idx != -1) && (cip_info.cli[idx].role == CIP_ROLE_CLIENT)) {
-                            cip_info_cli_free(idx);
-                            close(send_data_local->sock_fd);
-                            AT_TRACE("close tcp client. %d!\r\n", send_data_local->sock_fd);
+                        /* If max retries exceeded or other error, treat as send failure */
+                        if (tcp_retry_count >= MAX_RETRIES) {
+                            AT_TRACE("send retry exhausted after %d attempts\r\n", tcp_retry_count);
+                        }
+                        /* CRITICAL FIX: Free tx_buf first to prevent memory leak */
+                        sys_mfree((void *)(send_data_local->send_data_addr));
+                        send_data_local->send_data_addr = 0;
+
+                        /* Note: Don't close connection for temporary send failures (EAGAIN/ENOMEM)
+                         * Connection may still be usable. Only close for fatal errors. */
+                        if (errno != EAGAIN && errno != ENOMEM) {
+                            int idx = cip_info_cli_find(send_data_local->sock_fd);
+                            if ((idx != -1) && (cip_info.cli[idx].role == CIP_ROLE_CLIENT)) {
+                                AT_TRACE("close tcp client. %d!\r\n", send_data_local->sock_fd);
+                                close(send_data_local->sock_fd);  /* Close socket first */
+                                cip_info_cli_free(idx);  /* Then free connection info */
+                            }
                         }
 #ifndef CONFIG_ATCMD_SPI
                         if (cip_info.trans_mode == CIP_TRANS_MODE_PASSTHROUGH) {
@@ -1390,23 +1529,40 @@ TCP_RETRY_SEND:
                     if (cip_info.trans_mode != CIP_TRANS_MODE_PASSTHROUGH)
 #endif
                     {
-                        sys_mfree((void *)(send_data_local->send_data_addr));
+                        /* Only free if not already freed in error path */
+                        if (send_data_local->send_data_addr != 0) {
+                            sys_mfree((void *)(send_data_local->send_data_addr));
+                        }
                     }
                 } else if (*((uint16_t *)local_recv_buf) == AT_LOCAL_UDP_SEND_EVENT) {
                     struct at_local_udp_send *send_data_local = (struct at_local_udp_send *)local_recv_buf;
+                    int udp_retry_count = 0;
                     AT_RSP_START(128);
 UDP_RETRY_SEND:
                     send_cnt = sendto(send_data_local->sock_fd, (void *)(send_data_local->send_data_addr), send_data_local->send_data_len,
                                         0, (struct sockaddr *)&(send_data_local->to), send_data_local->tolen);
                     if (send_cnt <= 0) {
                         AT_TRACE("send data error. %d!\r\n", errno);
-                        if (errno == EAGAIN || errno == ENOMEM) {
+                        if ((errno == EAGAIN || errno == ENOMEM) && udp_retry_count < MAX_RETRIES) {
+                            udp_retry_count++;
                             goto UDP_RETRY_SEND;
                         }
-                        int idx = cip_info_cli_find(send_data_local->sock_fd);
-                        cip_info_cli_free(idx);
-                        close(send_data_local->sock_fd);
-                        AT_TRACE("close udp client. %d!\r\n", send_data_local->sock_fd);
+                        if (udp_retry_count >= MAX_RETRIES) {
+                            AT_TRACE("send retry exhausted after %d attempts\r\n", udp_retry_count);
+                        }
+                        /* CRITICAL FIX: Free tx_buf first to prevent memory leak */
+                        sys_mfree((void *)(send_data_local->send_data_addr));
+                        send_data_local->send_data_addr = 0;
+
+                        /* Don't close connection for temporary send failures */
+                        if (errno != EAGAIN && errno != ENOMEM) {
+                            int idx = cip_info_cli_find(send_data_local->sock_fd);
+                            if (idx != -1) {
+                                AT_TRACE("close udp client. %d!\r\n", send_data_local->sock_fd);
+                                close(send_data_local->sock_fd);  /* Close socket first */
+                                cip_info_cli_free(idx);  /* Then free connection info */
+                            }
+                        }
 #ifndef CONFIG_ATCMD_SPI
                         if (cip_info.trans_mode == CIP_TRANS_MODE_PASSTHROUGH) {
                             AT_RSP_FREE();
@@ -1431,33 +1587,65 @@ UDP_RETRY_SEND:
                     if (cip_info.trans_mode != CIP_TRANS_MODE_PASSTHROUGH)
 #endif
                     {
-                        sys_mfree((void *)(send_data_local->send_data_addr));
+                        /* Only free if not already freed in error path */
+                        if (send_data_local->send_data_addr != 0) {
+                            sys_mfree((void *)(send_data_local->send_data_addr));
+                        }
                     }
                 } else {
-                    AT_TRACE("unvalid local event.\r\n");
+                    AT_TRACE("Invalid local event.\r\n");
                 }
             }
         }
 
         for (i = 0; i < MAX_CLIENT_NUM; i++) {
+            if ((cip_info.cli[i].fd >= 0) && (FD_ISSET(cip_info.cli[i].fd, &except_set) ||
+                (wifi_vif_is_softap(vif_idx) && !dhcpd_ipaddr_is_valid(cip_info.cli[i].remote_ip)))) {
+                close_fd = cip_info.cli[i].fd;
+                AT_TRACE("error %d\r\n", cip_info.cli[i].fd);
+                close(close_fd);
+                cip_info_cli_free(i);
+            }
+
+            if ((cip_info.cli[i].fd >= 0) && (cip_info.cli[i].stop_flag == 1)) {
+                close_fd = cip_info.cli[i].fd;
+                cip_info_cli_free(i);
+                close(close_fd);
+                AT_TRACE("close %d.\r\n", close_fd);
+            }
+
+#ifdef CONFIG_ATCMD_SPI
+            if (cip_info.list_data_count >= (MAX_RECV_DATA_NUM_IN_LIST - 5)) {
+                // List count is not enought
+                break;
+            }
+#endif
+
             if ((cip_info.cli[i].fd >= 0) && FD_ISSET(cip_info.cli[i].fd, &read_set)) {
                 sys_memset(rx_buf, 0, rx_len);
                 if (cip_info.cli[i].type == CIP_TYPE_TCP) {
                     recv_sz = recv(cip_info.cli[i].fd, rx_buf, rx_len, 0);
                 } else {
                     sys_memset(&saddr, 0, sizeof(saddr));
+                    addr_sz = sizeof(saddr);
                     recv_sz = recvfrom(cip_info.cli[i].fd, rx_buf, rx_len,
                                         0, (struct sockaddr *)&saddr, (socklen_t*)&addr_sz);
                 }
-                //AT_TRACE("RX:%d, %d\r\n", cip_info.cli[i].fd, recv_sz);
+
                 if (recv_sz < 0) { /* Recv error */
-                    AT_TRACE("rx error %d\r\n", recv_sz);
+                    AT_TRACE("rx error %d, errno:%d\r\n", recv_sz, errno);
+                    close_fd = cip_info.cli[i].fd;
                     if (errno == ECONNABORTED) {
                         AT_TRACE("connection aborted, maybe remote close.\r\n");
                     }
-                    close_fd = cip_info.cli[i].fd;
-                    cip_info_cli_free(i);
+#ifdef CONFIG_ATCMD_SPI
+                    if (cip_info.trans_mode == CIP_TRANS_MODE_FILE_TRANSFER &&
+                            cip_file_trans_info.fd_idx == i) {
+                        cip_file_trans_info.terminate = 1;
+                    }
+#endif
                     close(close_fd);
+                    cip_info_cli_free(i);
                 } else if (recv_sz == 0) {
                     AT_TRACE("remote close %d\r\n", cip_info.cli[i].fd);
                     close(cip_info.cli[i].fd);
@@ -1487,42 +1675,37 @@ UDP_RETRY_SEND:
 #endif
                     if (cip_info.trans_mode == CIP_TRANS_MODE_NORMAL) {
 #ifdef CONFIG_ATCMD_SPI
-                        at_spi_recv_data_process(i, (uint8_t *)rx_buf, recv_sz);
+                        at_spi_recv_data_process(cip_info.cli[i].fd, (uint8_t *)rx_buf, recv_sz);
 #else
-                        AT_RSP_START(64 + recv_sz);
+                        AT_RSP_START(20);
                         AT_RSP("+IPD,%d,%d: ", cip_info.cli[i].fd, recv_sz);
-                        for (j = 0; j < recv_sz; j++)
-                            AT_RSP("%c", rx_buf[j]);
+                        AT_RSP_IMMEDIATE();
+                        AT_RSP_DIRECT((char *)rx_buf, recv_sz);
                         AT_RSP("\r\n");
                         AT_RSP_OK();
 #endif
                     }
                 }
             }
-            if ((cip_info.cli[i].fd >= 0) && (FD_ISSET(cip_info.cli[i].fd, &except_set) ||
-                (wifi_vif_is_softap(vif_idx) && !dhcpd_ipaddr_is_valid(cip_info.cli[i].remote_ip)))) {
-                close_fd = cip_info.cli[i].fd;
-                AT_TRACE("error %d\r\n", cip_info.cli[i].fd);
-                cip_info_cli_free(i);
-                close(close_fd);
-            }
+        }
+
 #ifdef CONFIG_ATCMD_SPI
             sys_enter_critical();
-            if (!list_is_empty(&cip_info.cli[i].recv_data_list) && at_spi_hw_is_idle()) {
-                spi_handshake_rising_trigger();
-                if (spi_nss_status_get() == RESET)
-                    AT_TRACE("nss corner case\r\n");
+            /* CRITICAL FIX: Don't trigger handshake if just sent TX response (within 50ms)
+             * to avoid double-trigger that confuses Master causing tx:1/2069 error.
+             * The spi_manager tracks state: if recently TX'd (AT_ACK/Data_ACK),
+             * Master is still reading that TX data - don't interrupt with new handshake! */
+            if (!list_is_empty(&cip_info.recv_data_list) && at_spi_hw_is_idle()
+                && cip_info.triger_count == 0 && spi_manager.stat == SPI_Slave_AT_Recv) {
+                /* Only trigger if we're in stable AT_Recv state, not just after TX */
+                    spi_handshake_rising_trigger();
+                    cip_info.triger_count ++;
             }
             sys_exit_critical();
 #endif
-            if ((cip_info.cli[i].fd >= 0) && (cip_info.cli[i].stop_flag == 1)) {
-                close_fd = cip_info.cli[i].fd;
-                cip_info_cli_free(i);
-                close(close_fd);
-                AT_TRACE("close %d.\r\n", close_fd);
-            }
-        }
-        if ((cip_info_valid_fd_cnt_get() == 0) && cip_info.local_srv_fd < 0) {
+
+        if ((cip_info_valid_fd_cnt_get() == 0) && cip_info.local_srv_fd < 0
+            && cip_info.tcp_udp_start_process_num == 0) {
             cip_task_terminate = 1;
         }
     }
@@ -1532,11 +1715,13 @@ UDP_RETRY_SEND:
         if (cip_info.cli[i].fd >= 0) {
             close_fd = cip_info.cli[i].fd;
             cip_info_cli_free(i);
+            AT_TRACE("close client fd:%d.\r\n", close_fd);
             close(close_fd);
         }
     }
     /* close the listening socket */
     if (cip_info.local_srv_fd >= 0) {
+        AT_TRACE("close local_srv_fd fd:%d.\r\n", cip_info.local_srv_fd);
         close(cip_info.local_srv_fd);
         cip_info.local_srv_fd = -1;
         cip_info.local_srv_port = 0;
@@ -1545,14 +1730,36 @@ UDP_RETRY_SEND:
     sys_mfree(rx_buf);
 
 Exit:
+#ifdef CONFIG_ATCMD_SPI
+    sys_mutex_get(&cip_info.list_lock);
+    p_item = (struct recv_data_node *)list_pick(&cip_info.recv_data_list);
+
+    while (p_item != NULL) {
+        if (p_item->data && (p_item->data_len > 0)) {
+            sys_mfree(p_item->data);
+        }
+        list_remove(&cip_info.recv_data_list, NULL, (struct list_hdr *)p_item);
+        cip_info.list_data_count--;
+        sys_mfree(p_item);
+        p_item = (struct recv_data_node *)list_pick(&cip_info.recv_data_list);
+    }
+    if (cip_info.list_data_count != 0) {
+        AT_TRACE("recv data list count error %d.\r\n", cip_info.list_data_count);
+        cip_info.list_data_count = 0;
+    }
+    sys_mutex_put(&cip_info.list_lock);
+#endif
     if (local_sock_send >= 0) {
         shutdown(local_sock_send, SHUT_RD);
         close(local_sock_send);
+        AT_TRACE("close local_sock_send fd:%d.\r\n", local_sock_send);
+        local_sock_send = -1;
     }
     if (local_sock_recv >= 0) {
         shutdown(local_sock_recv, SHUT_RD);
         close(local_sock_recv);
     }
+    cip_task_started = 0;
     sys_task_delete(NULL);
 }
 
@@ -1611,7 +1818,9 @@ void at_cip_ping(int argc, char **argv)
             ping_info->ping_interval = 1000;
             if (ping(ping_info) != ERR_OK)
                 goto Error;
+#ifdef CONFIG_ATCMD
             AT_RSP("%s", ping_info->ping_res);
+#endif
         }
     } else {
         goto Error;
@@ -1757,7 +1966,7 @@ Usage:
 */
 void at_cip_send(int argc, char **argv)
 {
-    int fd, idx;
+    int fd, idx, ret = 0;
     uint8_t type;
     uint32_t tx_len, file_len, segment_len;
     char *remote_ip;
@@ -1802,7 +2011,7 @@ void at_cip_send(int argc, char **argv)
             goto Error;
         }
         if (cip_info_cli_is_free(idx)) {
-            AT_TRACE("unvalid con_id\r\n");
+            AT_TRACE("Invalid con_id\r\n");
             goto Error;
         }
         tx_len = (uint32_t)strtoul((const char *)argv[2], &endptr, 10);
@@ -1813,9 +2022,9 @@ void at_cip_send(int argc, char **argv)
         fd = cip_info.cli[idx].fd;
         type = cip_info.cli[idx].type;
         if (type == CIP_TYPE_TCP) {
-            if (at_tcp_send(fd, tx_len) <= 0) {
+            ret = at_tcp_send(fd, tx_len);
+            if (ret <= 0)
                 goto Error;
-            }
         } else if (type == CIP_TYPE_UDP) {
             remote_ip = inet_ntoa(cip_info.cli[idx].remote_ip);
             remote_port = cip_info.cli[idx].remote_port;
@@ -1836,7 +2045,7 @@ void at_cip_send(int argc, char **argv)
         }
         if (idx != MAX_CLIENT_NUM) {
             if (cip_info_cli_is_free(idx)) {
-                AT_TRACE("unvalid con_id\r\n");
+                AT_TRACE("Invalid con_id\r\n");
                 goto Error;
             } else {
                 fd = cip_info.cli[idx].fd;
@@ -1847,7 +2056,7 @@ void at_cip_send(int argc, char **argv)
                 fd = cip_info.local_srv_fd;
                 type = CIP_TYPE_UDP;
             } else {
-                AT_TRACE("unvalid con_id\r\n");
+                AT_TRACE("Invalid con_id\r\n");
                 goto Error;
             }
         }
@@ -1866,9 +2075,9 @@ void at_cip_send(int argc, char **argv)
         }
         // AT_TRACE("CON: %d, len %d, ip %s, port %d\r\n", idx, tx_len, remote_ip, remote_port);
         if (type == CIP_TYPE_TCP) {
-            if (at_tcp_send(fd, tx_len) <= 0) {
+            ret = at_tcp_send(fd, tx_len);
+            if (ret <= 0)
                 goto Error;
-            }
         } else if (type == CIP_TYPE_UDP) {
             if (at_udp_send(fd, tx_len, remote_ip, remote_port) <= 0) {
                 goto Error;
@@ -1913,6 +2122,23 @@ void at_cip_send(int argc, char **argv)
     return;
 
 Error:
+#ifdef CONFIG_ATCMD_SPI
+    if (spi_manager.stat == SPI_Slave_Data_Recv || spi_manager.stat == SPI_Slave_Data_ACK
+        || spi_manager.stat == SPI_Slave_Idle) {
+        if (ret == -1) {
+            AT_RSP("error\r\n");
+        } else {
+            AT_RSP("SEND FAIL\r\n");
+        }
+        AT_RSP_IMMEDIATE();
+        if (spi_manager.stat == SPI_Slave_Idle) {
+            at_spi_rcv_atcmd_config(0);
+        }
+        return;
+    }
+
+    sys_memset(at_hw_rx_buf, 0, AT_HW_RX_BUF_SIZE);
+#endif
     AT_RSP_ERR();
     return;
 Usage:
@@ -1961,7 +2187,7 @@ void at_cip_send_file(int argc, char **argv)
             goto Error;
         }
         if (cip_info_cli_is_free(idx)) {
-            AT_TRACE("unvalid con_id\r\n");
+            AT_TRACE("Invalid con_id\r\n");
             goto Error;
         }
 
@@ -2002,8 +2228,7 @@ Usage:
 #ifdef CONFIG_ATCMD_SPI
 void at_cip_recvdata(int argc, char **argv)
 {
-    int recv_len;
-    int fd = -1, idx = -1;
+    int recv_len, idx;
     struct recv_data_node *p_item;
     uint8_t *data_remain = NULL;
 
@@ -2012,62 +2237,61 @@ void at_cip_recvdata(int argc, char **argv)
         if (argv[1][0] == AT_QUESTION) {
             goto Usage;
         } else {
-            for (idx = 0; idx < MAX_CLIENT_NUM; idx++) {
-                if (cip_info.cli[idx].fd >= 0) {
-                    if (!list_is_empty(&cip_info.cli[idx].recv_data_list)) {
-                        fd = cip_info.cli[idx].fd; // when found the first fd's recv data is not none, break
-                        break;
-                    }
-                }
-            }
-
-            if (idx < MAX_CLIENT_NUM && fd >= 0) {
+            if (cip_info.list_data_count > 0) {
                 recv_len = atoi(argv[1]);
                 if (recv_len < 0 || recv_len > AT_SPI_MAX_DATA_LEN) {
                     AT_TRACE("recv_len:%d error\r\n", recv_len);
                     goto Error;
                 }
 
-                sys_mutex_get(&cip_info.cli[idx].list_lock);
-                p_item = (struct recv_data_node *)list_pop_front(&cip_info.cli[idx].recv_data_list);
+                sys_mutex_get(&cip_info.list_lock);
+                p_item = (struct recv_data_node *)list_pop_front(&cip_info.recv_data_list);
 
                 if ((p_item != NULL) && p_item->data && (p_item->data_len > 0)) {
-                    if (p_item->data_len <= recv_len) { // data length is smaller than request data length
-                        AT_RSP("+CIPRECVDATA:%d,%d,", fd, p_item->data_len);
-
-                        // copy data to AT_RSP
-                        sys_memcpy((rsp_buf + rsp_buf_idx), p_item->data, p_item->data_len);
-                        rsp_buf_idx += p_item->data_len;
-
-                        // AT_TRACE("CIPRECVDATA,len:%d\r\n", p_item->data_len);
-                        sys_mfree(p_item->data);
-                        sys_mfree(p_item);
-                    } else {                            // data length is larger than request data length
-                        AT_RSP("+CIPRECVDATA:%d,%d,", fd, recv_len);
-
-                        // copy data to AT_RSP
-                        sys_memcpy(rsp_buf + rsp_buf_idx, p_item->data, p_item->data_len);
-                        rsp_buf_idx += p_item->data_len;
-                        // AT_TRACE("CIPRECVDATA, len:%d\r\n", recv_len);
-
-                        // copy remain data to a new buff, and then add it to list header again.
-                        data_remain = sys_malloc(p_item->data_len - recv_len);
-                        if (data_remain == NULL) {
-                            AT_TRACE("data_remain malloc failed, len:%d\r\n", (p_item->data_len - recv_len));
-                            sys_mfree(p_item->data); // when malloc fail, drop this data
+                    cip_info.list_data_count--;
+                    if (p_item->fd >= 0) {
+                        /* Normal socket data */
+                        idx = cip_info_cli_find(p_item->fd);
+                        if (idx < 0 || cip_info.cli[idx].stop_flag == 1) {
+                            AT_RSP("+IPD,-1,0:");
+                            sys_mfree(p_item->data);
                             sys_mfree(p_item);
-                            goto Error;
+                        } else {
+                            if (p_item->data_len <= recv_len) { // data length is smaller than request data length
+                                AT_RSP("+IPD,%d,%d:", p_item->fd, p_item->data_len);
+                                // copy data to AT_RSP
+                                sys_memcpy((rsp_buf + rsp_buf_idx), p_item->data, p_item->data_len);
+                                rsp_buf_idx += p_item->data_len;
+
+                                sys_mfree(p_item->data);
+                                sys_mfree(p_item);
+                            } else {                            // data length is larger than request data length
+                                AT_RSP("+IPD,%d,%d:", p_item->fd, recv_len);
+                                // copy data to AT_RSP
+                                sys_memcpy(rsp_buf + rsp_buf_idx, p_item->data, recv_len);
+                                rsp_buf_idx += recv_len;
+
+                                // copy remain data to a new buff, and then add it to list header again.
+                                data_remain = sys_malloc(p_item->data_len - recv_len);
+                                if (data_remain == NULL) {
+                                    AT_TRACE("data_remain malloc failed, len:%d\r\n", (p_item->data_len - recv_len));
+                                    sys_mfree(p_item->data); // when malloc fail, drop this data
+                                    sys_mfree(p_item);
+                                    goto Error;
+                                }
+                                sys_memcpy(data_remain, (p_item->data + recv_len), (p_item->data_len - recv_len));
+                                sys_mfree(p_item->data);
+                                p_item->data = data_remain;
+                                p_item->data_len = (p_item->data_len - recv_len);
+                                list_push_front(&cip_info.recv_data_list, &p_item->list_hdr);
+                                cip_info.list_data_count++;
+                            }
                         }
-                        sys_memcpy(data_remain, (p_item->data + recv_len), (p_item->data_len - recv_len));
-                        sys_mfree(p_item->data);
-                        p_item->data = data_remain;
-                        p_item->data_len = (p_item->data_len - recv_len);
-                        list_push_front(&cip_info.cli[idx].recv_data_list, &p_item->list_hdr);
                     }
                 }
-                sys_mutex_put(&cip_info.cli[idx].list_lock);
+                sys_mutex_put(&cip_info.list_lock);
             } else {
-                AT_RSP("+CIPRECVDATA:-1,0");
+                AT_RSP("+IPD,-1,0:");
             }
         }
     } else {
@@ -2075,10 +2299,12 @@ void at_cip_recvdata(int argc, char **argv)
     }
 
     AT_RSP_OK();
+    cip_info.triger_count = 0;
     return;
 
 Error:
     AT_RSP_ERR();
+    cip_info.triger_count = 0;
     return;
 Usage:
     AT_RSP("Usage:\r\n");
@@ -2143,7 +2369,7 @@ void at_cip_server(int argc, char **argv)
                     goto Error;
 #endif
                 if (type == NULL) {
-                    AT_TRACE("unvalid type.\r\n");
+                    AT_TRACE("Invalid type.\r\n");
                     goto Error;
                 }
                 if (strncmp(type, "TCP", 3) == 0) {
@@ -2155,7 +2381,7 @@ void at_cip_server(int argc, char **argv)
                         goto Error;
                     }
                 } else {
-                    AT_TRACE("unvalid type.\r\n");
+                    AT_TRACE("Invalid type.\r\n");
                     goto Error;
                 }
 

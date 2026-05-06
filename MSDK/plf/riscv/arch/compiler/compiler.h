@@ -57,6 +57,8 @@ OF SUCH DAMAGE.
 // Align instantiated lvalue or struct member on 4 bytes
 #define __ALIGN4 __attribute__((aligned(4)))
 
+#define __ALIGN64 __attribute__((aligned(64)))
+
 // Pack a structure field
 #define __PACKED16 __attribute__ ((__packed__))
 // Pack a structure field

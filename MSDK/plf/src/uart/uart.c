@@ -86,6 +86,7 @@ bool uart_irq_callback_unregister(uint32_t uart_port)
 
     return false;
 }
+
 void uart_dma_single_mode_config(uint32_t uart, uint32_t direction)
 {
     dma_single_data_parameter_struct dma_init_struct;
@@ -345,4 +346,3 @@ void uart_rx_flush(uint32_t usart_periph)
         usart_data_receive(usart_periph);
     }
 }
-
