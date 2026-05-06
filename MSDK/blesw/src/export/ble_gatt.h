@@ -1028,6 +1028,7 @@ typedef struct
     uint16_t    status;         /*!< Response status, @ref ble_status_t */
     uint8_t     user_lid;       /*!< GATT user local identifier */
     uint8_t     conn_idx;       /*!< Connection index */
+    uint16_t    att_hdl;        /*!< Attribute handle */
 } ble_gatt_cli_write_reliable_rsp_t;
 
 /* Response of write procedure */
@@ -1046,6 +1047,7 @@ typedef struct
     uint16_t    status;         /*!< Response status, @ref ble_status_t */
     uint8_t     user_lid;       /*!< GATT user local identifier */
     uint8_t     conn_idx;       /*!< Connection index */
+    bool        execute;        /*!< True for write execute, false for write cancel */
 } ble_gatt_cli_write_exe_rsp_t;
 
 /* Response of register notification/indication */

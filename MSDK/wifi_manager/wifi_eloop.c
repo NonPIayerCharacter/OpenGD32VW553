@@ -137,11 +137,13 @@ int eloop_event_register(eloop_event_id_t event_id,
 
 /*!
     \brief      unregister handler for a generic event, Unregister a generic event notifier that was previously registered with eloop_event_register().
-    \param[in]  event: event to cancel (eloop implementation specific)
+    \param[in]  event_id: event ID to cancel (eloop implementation specific)
+    \param[in]  handler: callback function to be called when event is triggered
     \param[out] none
     \retval     none
 */
-void eloop_event_unregister(eloop_event_id_t event_id)
+void eloop_event_unregister(eloop_event_id_t event_id,
+                eloop_event_handler handler)
 {
     size_t i;
 
@@ -152,7 +154,8 @@ void eloop_event_unregister(eloop_event_id_t event_id)
         return;
 
     for (i = 0; i < eloop.event_count; i++) {
-        if (eloop.events[i].event_id == event_id)
+        if ((eloop.events[i].event_id == event_id) &&
+            (eloop.events[i].handler == handler))
             break;
     }
     if (i == eloop.event_count)

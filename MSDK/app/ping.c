@@ -32,7 +32,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-#include "app_cfg.h"
+#include <app_cfg.h>
 #include "lwip/opt.h"
 #if LWIP_PING
 #include "lwip/mem.h"
@@ -228,7 +228,7 @@ static void ping_recv(struct ping_info_t *ping_info, int s)
                 //if (cmd_mode_type_get() == CMD_MODE_TYPE_AT)
                 ping_info->ping_res_len += co_snprintf((ping_info->ping_res + ping_info->ping_res_len),
                                                         (sizeof(ping_info->ping_res) - ping_info->ping_res_len),
-                                                        "+%d\r\n", delay);
+                                                        "+PING:%d\r\n", delay);
                 //else
 #endif
                 {
@@ -286,7 +286,7 @@ static void ping_recv(struct ping_info_t *ping_info, int s)
     //if (cmd_mode_type_get() == CMD_MODE_TYPE_AT)
     ping_info->ping_res_len += co_snprintf((ping_info->ping_res + ping_info->ping_res_len),
                                             (sizeof(ping_info->ping_res) - ping_info->ping_res_len),
-                                            "+timeout\r\n");
+                                            "+PING:TIMEOUT\r\n");
     //else
 #endif
         app_print("[ping_test] timeout\n\r");

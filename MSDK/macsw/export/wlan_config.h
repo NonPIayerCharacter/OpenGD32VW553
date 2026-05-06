@@ -182,6 +182,16 @@ OF SUCH DAMAGE.
     #define CFG_SOFTAP
 #endif /* CFG_WIFI_CONCURRENT */
 
+// #define CFG_WIFI_MESH_SMART
+#ifdef CFG_WIFI_MESH_SMART
+    #undef CFG_SOFTAP
+    #define CFG_SOFTAP
+    #undef CFG_STA_NUM
+    #define CFG_STA_NUM                   4
+    #undef CFG_WIFI_CONCURRENT
+    #define CFG_WIFI_CONCURRENT
+#endif
+
 // #define CFG_SOFTAP_MANY_CLIENTS
 #ifdef CFG_SOFTAP_MANY_CLIENTS
     #undef CFG_STA_NUM

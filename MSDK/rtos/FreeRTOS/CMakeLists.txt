@@ -1,8 +1,6 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-add_library(freertos_api INTERFACE)
-
 add_library(freertos)
 
 target_sources(freertos
@@ -26,14 +24,14 @@ target_sources(freertos
 )
 
 
-
-target_include_directories(freertos_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Source/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Source/portable/Common>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Source/portable/riscv32>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/config>
+set(FREERTOS_INCLUDE_REL_PATHS
+    Source/include
+    Source/portable/Common
+    Source/portable/riscv32
+    config
 )
+
+msdk_agg_api(freertos_api ${FREERTOS_INCLUDE_REL_PATHS})
 
 target_link_libraries(freertos
     freertos_api
@@ -43,5 +41,6 @@ target_link_libraries(freertos
     util_api
     bsp_api
 )
-add_lib_api(freertos_api)
-add_lib(freertos)
+
+msdk_agg_module(freertos)
+

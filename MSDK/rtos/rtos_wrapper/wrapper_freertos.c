@@ -1184,11 +1184,13 @@ int32_t sys_random_bytes_get(void *dst, uint32_t size)
 */
 static void _sys_timer_callback(void *p_tmr)
 {
-    timer_func_t timer_func;
+    timer_func_t timer_func = NULL;
     os_timer_t timer = (os_timer_t)p_tmr;
     os_timer_context_t *timer_ctx = (os_timer_context_t *)pvTimerGetTimerID(timer);
 
-    timer_func = timer_ctx->timer_func;
+    if (timer_ctx) {
+        timer_func = timer_ctx->timer_func;
+    }
     if (timer_func == NULL) {
         dbg_print(ERR, "_sys_timer_callback, timer func is NULL, return\r\n");
         return;
@@ -1249,6 +1251,7 @@ void sys_timer_delete(os_timer_t *timer)
     *timer = NULL;
     timer_ctx = (os_timer_context_t *)pvTimerGetTimerID(p_timer);
 
+    vTimerSetTimerID(p_timer, NULL);
     if (xTimerDelete(p_timer, (TIMER_MAX_BLOCK_TIME / OS_MS_PER_TICK)) != pdPASS) {
         dbg_print(ERR, "sys_timer_delete, return error\r\n");
     }

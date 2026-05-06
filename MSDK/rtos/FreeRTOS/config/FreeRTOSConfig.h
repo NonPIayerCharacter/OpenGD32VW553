@@ -82,7 +82,7 @@
  * See http://www.freertos.org/a00110.html.
  */
 #include "wrapper_os_config.h"
-
+#include "stdio.h"
 /*----------------------------------------------------------*/
 #define configUSE_PREEMPTION            1
 #define configUSE_IDLE_HOOK             1
@@ -196,6 +196,21 @@ We use --gc-sections when linking, so there is no harm is setting all of these t
 /* max syscall priority, a larger interrupt priorities value indicates a higher priority, priority support 0-15 */
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY    10
 
+#define configASSERT( x )                                                    \
+    if( ( x ) == 0 )                                                         \
+    {                                                                        \
+        printf( "[FATAL] [%s:%d] %s\r\n", __func__, __LINE__, # x ); \
+        do {                                                                        \
+            int mstatus;                                                            \
+            __asm__ volatile ("csrrci %0, mstatus, %1" : "=r" (mstatus) : "i" (8)); \
+        } while(0);                                                         \
+        for( ; ; ) {; };                                                      \
+    }
+
+#ifdef CONFIG_AWS_IOT_SUPPORT
+#undef configASSERT
+#endif /* CONFIG_AWS_IOT_SUPPORT */
+
 #ifdef CONFIG_AZURE_IOT_SUPPORT
 #define configSUPPORT_STATIC_ALLOCATION         1
 
@@ -203,17 +218,6 @@ extern void vLoggingPrintf( const char * pcFormatString,
                             ... );
 #define configPRINTF( X )    vLoggingPrintf X
 #define configUSE_DAEMON_TASK_STARTUP_HOOK      1
-
-#define configASSERT( x )                                                    \
-    if( ( x ) == 0 )                                                         \
-    {                                                                        \
-        vLoggingPrintf( "[FATAL] [%s:%d] %s\r\n", __func__, __LINE__, # x ); \
-        do {                                                                        \
-            int mstatus;                                                            \
-            __asm__ volatile ("csrrci %0, mstatus, %1" : "=r" (mstatus) : "i" (8)); \
-        } while(0);                                                         \
-        for( ; ; ) {; };                                                      \
-    }
 
 #endif /* CONFIG_AZURE_IOT_SUPPORT */
 

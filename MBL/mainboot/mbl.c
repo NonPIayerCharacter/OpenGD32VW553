@@ -41,10 +41,15 @@ OF SUCH DAMAGE.
 #include <stdio.h>
 
 // #define CONFIG_BYPASS_MBL
+#define CONFIG_XMODEM
 #if CONFIG_BOARD == PLATFORM_BOARD_32VW55X_EVAL
 #define LOG_UART        UART1
 #else
 #define LOG_UART        UART2
+#endif
+
+#ifdef CONFIG_XMODEM
+extern void xmodem_start(uint32_t timeout);
 #endif
 
 static uint8_t alloc_buf[MBL_BUF_SIZE];
@@ -209,6 +214,7 @@ int main(void)
     int secure_boot = 1;
     uint8_t val;
     int ret;
+    uint8_t xmodem_flag = 0;
 
     /* Read Initial boot state from shared SRAM */
     memcpy(&ibl_state, (void *)IBL_SHARED_DATA_START, sizeof(struct ibl_state_t));
@@ -244,6 +250,23 @@ int main(void)
         /* Others */
         mbedtls_ecp_curve_val_init();
     }
+
+#ifdef CONFIG_XMODEM
+    /* XMODEM: auto-detect UART for 100ms(looks for SYNCREQ 0x75 at 115200).
+     * On hit: reply SYNCACK 0x79, then handshake (baud/frame/erase).*/
+    ret = rom_sys_status_get(SYS_XMODEM_FLAG, 1, &xmodem_flag);
+    if (ret == SYS_STATUS_FOUND_OK) {
+        if (xmodem_flag) {
+            xmodem_flag = 0;
+            rom_sys_status_set(SYS_XMODEM_FLAG, 1, &xmodem_flag);
+            xmodem_start(0xffffffff);
+        } else {
+            xmodem_start(100000);
+        }
+    } else {
+        xmodem_start(100000);
+    }
+#endif
 
     /* Reinitialize uart since system clock source changed from IRC16M to HXTAL40M */
     log_uart_init();

@@ -353,6 +353,19 @@ struct mac_scan_result
     // FTM support
     bool ftm_support;
     uint8_t md_ie[MAC_MDE_ELMT_LEN];
+#ifdef CFG_WIFI_MESH_SMART
+    /*
+    +----------+----------+----------+----------+----------+----------+
+    | Element  | Length   |    OUI   |   OUI    |  OUI      |   ...    |
+    |    ID    |          | (byte 1) | (byte 2) |  (byte 3) |   Data   |
+    +----------+----------+----------+----------+----------+----------+
+    |  1 byte  |  1 byte  |  1 byte  |  1 byte  |  1 byte  |  N bytes |
+    +----------+----------+----------+----------+----------+----------+
+    */
+    // will add 12*32=384 bytes sram
+    // uint8_t vendor_ie[2 + 11 + MAC_SSID_LEN]; // 2(element id + len) + sizeof(wifi_mesh_smart_ap_element_t) + MAC_SSID_LEN
+    uint8_t vendor_ie[(2 + 10)]; // 2(element id + len) + sizeof(wifi_mesh_smart_ap_element_t)
+#endif
 };
 
 //Maximum number of scan results that can be stored.

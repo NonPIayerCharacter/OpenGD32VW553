@@ -49,7 +49,7 @@ OF SUCH DAMAGE.
 
 #define MQTT5_MAX_FIXED_HEADER_SIZE 5
 #define APPEND_CHECK(a, ret)  if(a == -1) {                         \
-        ESP_LOGE(TAG,"%s(%d) fail",__FUNCTION__, __LINE__);      \
+        printf(TAG,"%s(%d) fail",__FUNCTION__, __LINE__);      \
         return (ret);                                           \
         }
 #define MQTT5_SHARED_SUB "$share/%s/%s"
@@ -1576,7 +1576,7 @@ mqtt5_received_message_dispose(mqtt_client_t *client, u8_t fixed_hdr_len, u16_t 
             }
             /* GD modified */
             if (topic_len == 0 && resp_property_data_mqtt5.topic_alias == 0) {
-                LWIP_DEBUGF(MQTT_DEBUG_WARN,( "mqtt5_message_received: Received unvalid topic PUBLISH packet\n"));
+                LWIP_DEBUGF(MQTT_DEBUG_WARN,( "mqtt5_message_received: Received invalid topic PUBLISH packet\n"));
                 goto out_disconnect;
             }
             if (topic_len) {

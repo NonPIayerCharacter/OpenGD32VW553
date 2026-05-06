@@ -132,6 +132,12 @@ static void app_dfu_cli_control_cb(uint16_t data_len, uint8_t *p_data)
 
     sys_timer_stop(&dfu_cli_timer, false);
 
+    // Basic opcode and length validation to prevent out-of-bounds access
+    if (opcode >= DFU_OPCODE_MAX) {
+        dbg_print(NOTICE, "dfu cli invalid opcode: %d\r\n", opcode);
+        goto rsp_error;
+    }
+
 #if FEAT_CRC_SUPPORT
     if (opcode != DFU_OPCODE_RESET && opcode != DFU_OPCODE_CRC_CHECK && result != DFU_ERROR_NO_ERROR) {
         goto rsp_error;
@@ -160,6 +166,12 @@ static void app_dfu_cli_control_cb(uint16_t data_len, uint8_t *p_data)
     case DFU_OPCODE_IMAGE_SIZE: {
         if(!app_dfu_cli_state_check(DFU_STATE_CLI_IMAGE_SIZE_GET)) {
             error_code = DFU_ERROR_STATE_ERROR;
+            goto local_error;
+        }
+
+        // Basic image size validation to avoid later address overflow
+        if (dfu_cli_env.img_total_size == 0) {
+            error_code = DFU_ERROR_MEMORY_CAPA_EXCEED;
             goto local_error;
         }
 
@@ -219,6 +231,7 @@ static void app_dfu_cli_control_cb(uint16_t data_len, uint8_t *p_data)
 #if FEAT_CRC_SUPPORT
         case DFU_OPCODE_CRC_CHECK:{
             uint16_t image_length = 0;
+            uint8_t data[BLE_TRANSMIT_SIZE] = {0};
 
             if(!app_dfu_cli_state_check(DFU_STATE_CLI_VERIFICATION)) {
                 error_code = DFU_ERROR_STATE_ERROR;
@@ -366,7 +379,8 @@ static void app_dfu_cli_ota_timer_timeout_cb( void *ptmr, void *p_arg )
     cmd[1] = DFU_ERROR_TIMEOUT;
     ble_ota_cli_write_cmd(0, cmd, 2);
 
-    dfu_cli_env.state = DFU_STATE_CLI_IDLE;
+    // Reset on timeout to avoid resource leaks and hung state
+    app_dfu_cli_reset();
 }
 
 void app_ble_dfu_start(uint8_t conidx, uint32_t img_size)

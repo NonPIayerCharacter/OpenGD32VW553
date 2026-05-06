@@ -51,6 +51,9 @@ void spi_i2s_init_config(void);
 uint8_t spi_i2s_init_sample_rate(uint16_t sample_rate);
 
 void spi_i2s_dma_irqhandler(void);
+#ifdef I2S_RECORD
+void spi_i2s_record_start(os_queue_t queue, uint32_t dma_addr0, uint32_t dma_addr1, uint32_t len);
+#endif
 
 #ifdef __cplusplus
 }

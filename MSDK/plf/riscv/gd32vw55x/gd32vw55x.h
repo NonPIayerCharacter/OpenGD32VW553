@@ -69,6 +69,8 @@ OF SUCH DAMAGE.
 #define HXTAL_VALUE    ((uint32_t)40000000) // asic
 #elif PLATFORM_CRYSTAL == CRYSTAL_26M
 #define HXTAL_VALUE    ((uint32_t)26000000) // asic
+#elif PLATFORM_CRYSTAL == CRYSTAL_48M
+#define HXTAL_VALUE    ((uint32_t)48000000) // asic
 #endif
 #endif
 #endif /* high speed crystal oscillator value */

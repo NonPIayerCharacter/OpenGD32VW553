@@ -637,6 +637,12 @@ altcp_mbedtls_setup_callbacks(struct altcp_pcb *conn, struct altcp_pcb *inner_co
   /* listen is set totally different :-) */
 }
 
+static void my_debug(void *ctx, int level, const char *file, int line, const char *str)
+{
+    ((void) level);
+    printf("%s:%04d: %s", file, line, str);
+}
+
 static err_t
 altcp_mbedtls_setup(void *conf, struct altcp_pcb *conn, struct altcp_pcb *inner_conn)
 {
@@ -655,6 +661,11 @@ altcp_mbedtls_setup(void *conf, struct altcp_pcb *conn, struct altcp_pcb *inner_
   }
   /* initialize mbedtls context: */
   mbedtls_ssl_init(&state->ssl_context);
+
+  mbedtls_debug_set_threshold(2);
+  // mbedtls_ssl_conf_dbg(&config->conf, my_debug, NULL);
+  mbedtls_ssl_conf_read_timeout(&config->conf, 1200000);
+
   ret = mbedtls_ssl_setup(&state->ssl_context, &config->conf);
   if (ret != 0) {
     LWIP_DEBUGF(ALTCP_MBEDTLS_DEBUG, ("mbedtls_ssl_setup failed\n"));
@@ -1047,7 +1058,7 @@ altcp_tls_create_config_client_psk(const u8_t *psk, size_t psk_len, const u8_t *
 
   /* Initialize the pre-shared key if provided */
   if (!psk || !psk_identity) {
-    LWIP_DEBUGF(ALTCP_MBEDTLS_DEBUG, ("unvalid pre-shared key"));
+    LWIP_DEBUGF(ALTCP_MBEDTLS_DEBUG, ("Invalid pre-shared key"));
   } else {
     ret = mbedtls_ssl_conf_psk(&conf->conf, psk, psk_len, psk_identity, psk_identity_len);
     if (ret != 0) {

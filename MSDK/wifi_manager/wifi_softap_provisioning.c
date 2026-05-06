@@ -44,6 +44,10 @@ OF SUCH DAMAGE.
 #include "wifi_softap_provisioning.h"
 #include "dnsd.h"
 
+#ifdef CONFIG_WIFI_MESH_SMART
+#include "wifi_mesh_smart.h"
+#endif
+
 #ifdef CONFIG_SOFTAP_PROVISIONING
 
 static os_task_t* provisioning_task_tcb = NULL;
@@ -56,7 +60,7 @@ const uint8_t ap_password[] = "12345678";
 
 #define PROVISIONING_TASK_STK_SIZE                  512
 #define PROVISIONING_TASK_QUEUE_SIZE                4
-#define PROVISIONING_TASK_PRIO                      16
+#define PROVISIONING_TASK_PRIO                      (16 + 2)
 
 #define MAX_RETRY_COUNT                             5
 
@@ -74,6 +78,10 @@ typedef enum {
     PROVISIONING_STATE_SUCCESSFUL,
 } SOFTAP_PROVISIONING_STATE_E;
 
+// callback function
+static void sta_cb_conn_ok(void *eloop_data, void *user_ctx);
+static void sta_cb_conn_fail(void *eloop_data, void *user_ctx);
+
 static void wifi_softap_provisonging_send_msg(SOFTAP_PROVISIONING_MESSAGE_TYPE_E msg_type)
 {
 
@@ -88,16 +96,16 @@ static void wifi_softap_provisonging_send_msg(SOFTAP_PROVISIONING_MESSAGE_TYPE_E
 
 static void sta_cb_conn_ok(void *eloop_data, void *user_ctx)
 {
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS);
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS, sta_cb_conn_ok);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL, sta_cb_conn_fail);
     wifi_softap_provisonging_send_msg(PROVISIONING_MSG_STA_CONNECT_OK);
 }
 
 
 static void sta_cb_conn_fail(void *eloop_data, void *user_ctx)
 {
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS);
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS, sta_cb_conn_ok);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL, sta_cb_conn_fail);
     wifi_softap_provisonging_send_msg(PROVISIONING_MSG_STA_CONNECT_FAILED);
 }
 
@@ -123,6 +131,13 @@ static void wifi_softap_provisioning(void *arg)
         if (sys_task_wait(0, &msg_type) == OS_OK) {
             if (msg_type == PROVISIONING_MSG_CONFIGURED) {
                 if (state == PROVISIONING_STATE_WAIT_CONFIGURED) {
+                #ifdef CONFIG_WIFI_MESH_SMART
+                    wifi_management_ap_stop();
+                    state = PROVISIONING_STATE_SUCCESSFUL;
+                    netlink_printf("softap provisioning get ssid and pwd ok, config mesh smart and exit provision\r\n");
+                    wifi_mesh_smart_config_rootap_info((char *)config_ssid, (char *)config_password);
+                    break;
+                #else
                     netlink_printf("softap provisioning got configure, start connecting\r\n");
                     state = PROVISIONING_STATE_STA_CONNECTING;
                     wifi_management_sta_start();
@@ -135,6 +150,7 @@ static void wifi_softap_provisioning(void *arg)
                         eloop_event_register(WIFI_MGMT_EVENT_CONNECT_SUCCESS, sta_cb_conn_ok, NULL, NULL);
                         eloop_event_register(WIFI_MGMT_EVENT_CONNECT_FAIL, sta_cb_conn_fail, NULL, NULL);
                     }
+                #endif
                 } else {
                     netlink_printf("softap provisioning got dulicate configure, state %d\r\n", state);
                 }
@@ -150,6 +166,13 @@ static void wifi_softap_provisioning(void *arg)
                     wifi_management_ap_start((char *)ap_ssid, (char *)ap_password, 1, auth_mode, 0);
                     state = PROVISIONING_STATE_WAIT_CONFIGURED;
                 } else {
+                #ifdef CONFIG_WIFI_MESH_SMART
+                    wifi_management_ap_stop();
+                    state = PROVISIONING_STATE_SUCCESSFUL;
+                    wifi_mesh_smart_config_rootap_info((char *)config_ssid, (char *)config_password);
+                    netlink_printf("softap provisioning get ssid and pwd ok, config mesh smart and exit provision\r\n");
+                    break;
+                #else
                     max_cnt_count--;
                     state = PROVISIONING_STATE_STA_CONNECTING;
                     wifi_management_sta_start();
@@ -157,10 +180,12 @@ static void wifi_softap_provisioning(void *arg)
                     wifi_management_connect((char *)config_ssid, (char *)config_password, 0);
                     eloop_event_register(WIFI_MGMT_EVENT_CONNECT_SUCCESS, sta_cb_conn_ok, NULL, NULL);
                     eloop_event_register(WIFI_MGMT_EVENT_CONNECT_FAIL, sta_cb_conn_fail, NULL, NULL);
+                #endif
                 }
             }
             else if (msg_type == PROVISIONING_MSG_STOP) {
                 netlink_printf("softap provisioning stop\r\n");
+                wifi_management_ap_stop();
                 state = PROVISIONING_STATE_IDLE;
                 break;
             }

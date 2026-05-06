@@ -42,6 +42,7 @@ OF SUCH DAMAGE.
 #include "lwip/apps/mqtt.h"
 #include "lwip/apps/mqtt5.h"
 #include "lwip/apps/mqtt_priv.h"
+#include "lwip/tcpip.h"
 
 #include "mqtt_ssl_config.c"
 
@@ -110,12 +111,14 @@ void mqtt_connect_free(void)
     if (mqtt_client == NULL)
         return;
 
+    LOCK_TCPIP_CORE();
     if (current_mqtt_mode == MODE_TYPE_MQTT5) {
         mqtt5_disconnect(mqtt_client);
         mqtt5_param_delete(mqtt_client);
     } else {
         mqtt_disconnect(mqtt_client);
     }
+    UNLOCK_TCPIP_CORE();
     mqtt_ssl_cfg_free(mqtt_client);
     mqtt_client_free(mqtt_client);
     mqtt_client = NULL;
@@ -209,6 +212,8 @@ static int client_connect(void)
 {
     err_t ret = ERR_OK;
     uint32_t connect_time = 0;
+    uint8_t mqtt_connect_retry = 0;
+    uint8_t mqtt_connect_retry_max = 10;
 
     mqtt_client = mqtt_client_new();
     if (mqtt_client == NULL) {
@@ -221,6 +226,13 @@ static int client_connect(void)
     mqtt_ssl_cfg(mqtt_client, tls_auth_mode);
     mqtt_set_inpub_callback(mqtt_client, mqtt_receive_pub_topic_print, mqtt_receive_pub_msg_print, &client_info);
 
+retry:
+    mqtt_connect_retry++;
+    sys_ms_sleep(1000);
+    if (mqtt_connect_retry > mqtt_connect_retry_max) {
+        printf("MQTT mqtt_client: all connecting retries failed.\r\n");
+        return -3;
+    }
     if (current_mqtt_mode == MODE_TYPE_MQTT5) {
         if (mqtt5_param_cfg(mqtt_client)) {
             printf("MQTT: Configuration MQTT parameters failed, stop connection.\r\n");
@@ -228,21 +240,32 @@ static int client_connect(void)
         }
 
         connect_time = sys_current_time_get();
+        LOCK_TCPIP_CORE();
         ret = mqtt5_client_connect(mqtt_client, &sever_ip_addr, SERVER_PORT, NULL, mqtt_connect_callback, NULL, &client_info,
                             &(mqtt_client->mqtt5_config->connect_property_info),
                             &(mqtt_client->mqtt5_config->will_property_info));
+        UNLOCK_TCPIP_CORE();
         if (ret != ERR_OK) {
             printf("MQTT mqtt_client: connect to server failed.\r\n");
-            return ret;
+            mqtt5_param_delete(mqtt_client);
+            connect_fail_reason = -1;
+            goto retry;
         }
 
         while (mqtt_client_is_connected(mqtt_client) == false) {
             if ((sys_current_time_get() - connect_time) > 5000) {
-               printf("MQTT mqtt_client: connect to server timeout.\r\n");
-               return -3;
+                printf("MQTT mqtt_client: connect to server timeout.\r\n");
+                LOCK_TCPIP_CORE();
+                mqtt5_disconnect(mqtt_client);
+                UNLOCK_TCPIP_CORE();
+                mqtt5_param_delete(mqtt_client);
+                connect_fail_reason = -1;
+                goto retry;
             }
             if (connect_fail_reason == MQTT_CONNECTION_REFUSE_PROTOCOL) {
+                LOCK_TCPIP_CORE();
                 mqtt5_disconnect(mqtt_client);
+                UNLOCK_TCPIP_CORE();
                 mqtt5_param_delete(mqtt_client);
                 printf("MQTT: The server does not support version 5.0, now switch to version 3.1.1.\r\n");
                 current_mqtt_mode = MODE_TYPE_MQTT;
@@ -250,7 +273,12 @@ static int client_connect(void)
                 break;
             } else if (connect_fail_reason > 0) {
                 mqtt5_fail_reason_display((mqtt5_connect_return_res_t)connect_fail_reason);
-                return connect_fail_reason;
+                LOCK_TCPIP_CORE();
+                mqtt5_disconnect(mqtt_client);
+                UNLOCK_TCPIP_CORE();
+                mqtt5_param_delete(mqtt_client);
+                connect_fail_reason = -1;
+                goto retry;
             }
             sys_yield();
         }
@@ -258,20 +286,31 @@ static int client_connect(void)
 
     if (current_mqtt_mode == MODE_TYPE_MQTT) {
         connect_time = sys_current_time_get();
+        LOCK_TCPIP_CORE();
         ret = mqtt_client_connect(mqtt_client, &sever_ip_addr, SERVER_PORT, NULL, mqtt_connect_callback, NULL, &client_info);
+        UNLOCK_TCPIP_CORE();
         if (ret != ERR_OK) {
             printf("MQTT mqtt_client: connect to server failed.\r\n");
-            return ret;
+            connect_fail_reason = -1;
+            goto retry;
         }
 
         while(mqtt_client_is_connected(mqtt_client) == false) {
             if ((sys_current_time_get() - connect_time) > 5000) {
-               printf("MQTT mqtt_client: connect to server timeout.\r\n");
-               return -3;
+                printf("MQTT mqtt_client: connect to server timeout.\r\n");
+                LOCK_TCPIP_CORE();
+                mqtt_disconnect(mqtt_client);
+                UNLOCK_TCPIP_CORE();
+                connect_fail_reason = -1;
+                goto retry;
             }
             if (connect_fail_reason > 0) {
                 mqtt_fail_reason_display((mqtt_connect_return_res_t)connect_fail_reason);
-                return connect_fail_reason;
+                LOCK_TCPIP_CORE();
+                mqtt_disconnect(mqtt_client);
+                UNLOCK_TCPIP_CORE();
+                connect_fail_reason = -1;
+                goto retry;
             }
             sys_yield();
         }
@@ -330,6 +369,7 @@ static int client_subscribe(void)
 {
     err_t ret = ERR_OK;
 
+    LOCK_TCPIP_CORE();
     if (current_mqtt_mode == MODE_TYPE_MQTT5) {
         mqtt5_topic_t topic_info;
         topic_info.filter = topic_sub;
@@ -341,6 +381,8 @@ static int client_subscribe(void)
         ret = mqtt_sub_unsub(mqtt_client, topic_sub, TOPIC_QOS_SUB, mqtt_sub_cb,
                             &client_info, 1);
     }
+    UNLOCK_TCPIP_CORE();
+
     return ret;
 }
 
@@ -348,6 +390,7 @@ static int client_unsubscribe(void)
 {
     err_t ret = ERR_OK;
 
+    LOCK_TCPIP_CORE();
     if (current_mqtt_mode == MODE_TYPE_MQTT5) {
         ret = mqtt5_msg_unsub(mqtt_client, topic_sub, TOPIC_QOS_SUB, mqtt_unsub_cb,
                         &client_info, mqtt_client->mqtt5_config->unsubscribe_property_info);
@@ -355,6 +398,8 @@ static int client_unsubscribe(void)
         ret = mqtt_sub_unsub(mqtt_client, topic_sub, TOPIC_QOS_SUB, mqtt_unsub_cb,
                         &client_info, 0);
     }
+    UNLOCK_TCPIP_CORE();
+
     return ret;
 }
 
@@ -362,12 +407,15 @@ static int client_publish(char *topic, char *context, uint16_t length)
 {
     err_t ret = ERR_OK;
 
+    LOCK_TCPIP_CORE();
     if (current_mqtt_mode == MODE_TYPE_MQTT5) {
         ret = mqtt5_msg_publish(mqtt_client, topic, context, length, TOPIC_QOS_PUB, TOPIC_RETAIN, mqtt_pub_cb, NULL, mqtt_client->mqtt5_config->publish_property_info,
                     mqtt_client->mqtt5_config->server_resp_property_info.response_info);
     } else {
         ret = mqtt_msg_publish(mqtt_client, topic, context, length, TOPIC_QOS_PUB, TOPIC_RETAIN, mqtt_pub_cb, NULL);
     }
+    UNLOCK_TCPIP_CORE();
+
     return ret;
 }
 

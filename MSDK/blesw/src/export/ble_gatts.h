@@ -110,6 +110,7 @@ typedef struct
     uint16_t    status;     /*!< Status of the operation (see enum #ble_err_t) */
     uint8_t     svc_id;     /*!< Service identifier */
     uint16_t    att_idx;    /*!< Attribute index */
+    uint8_t     type;       /*!< Send type, @ref ble_gatt_evt_type_t */
 } ble_gatts_ntf_ind_send_rsp_t;
 
 /* GATT server notification/indication multiple send response structure */
@@ -182,13 +183,13 @@ typedef struct
 typedef ble_status_t (*p_fun_srv_cb)(ble_gatts_msg_info_t *p_srv_msg_info);
 
 /* Prototype of BLE GATT server service list handler */
-typedef void (*p_fun_svc_list_cb)(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type);
+typedef void (*p_fun_svc_list_cb)(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type, uint8_t svc_info);
 
 /* Prototype of BLE GATT characteristic service list handler */
-typedef void (*p_fun_char_list_cb)(const uint8_t *p_char_uuid, uint16_t char_val_idx);
+typedef void (*p_fun_char_list_cb)(uint8_t svc_id, const uint8_t *p_char_uuid, uint16_t char_val_idx, uint16_t char_info);
 
 /* Prototype of BLE GATT descriptor service list handler */
-typedef void (*p_fun_desc_list_cb)(const uint8_t *p_desc_uuid, uint16_t desc_idx);
+typedef void (*p_fun_desc_list_cb)(uint8_t svc_id, const uint8_t *p_desc_uuid, uint16_t desc_idx, uint16_t char_info);
 
 /*!
     \brief      Add service to GATT server module

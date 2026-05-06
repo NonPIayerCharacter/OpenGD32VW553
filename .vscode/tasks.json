@@ -224,19 +224,19 @@
         },
         {
             "label": "Start OpenOCD (GDLink)",
-            "type": "shell",
+            "type": "process",
             "windows": {
-                "command": "cmd",
+                "command": "${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe",
                 "args": [
-                    "/c",
-                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg\""
+                    "-f",
+                    "${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg"
                 ]
             },
             "linux": {
-                "command": "bash",
+                "command": "${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd",
                 "args": [
-                    "-c",
-                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg\""
+                    "-f",
+                    "${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_gdlink.cfg"
                 ]
             },
             "presentation": {
@@ -262,19 +262,19 @@
         },
         {
             "label": "Start OpenOCD (JLink)",
-            "type": "shell",
+            "type": "process",
             "windows": {
-                "command": "cmd",
+                "command": "${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe",
                 "args": [
-                    "/c",
-                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_windows/bin/openocd.exe\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg\""
+                    "-f",
+                    "${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg"
                 ]
             },
             "linux": {
-                "command": "bash",
+                "command": "${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd",
                 "args": [
-                    "-c",
-                    "\"${workspaceFolder}/tools/xpack-openocd-0.11.0-3_linux/bin/openocd\" -f \"${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg\""
+                    "-f",
+                    "${workspaceFolder}/MSDK/projects/eclipse/msdk/openocd_jlink.cfg"
                 ]
             },
             "presentation": {

@@ -4,15 +4,11 @@ set(TARGET_EXE MSDK  CACHE STRING    "main target")
 
 set(TARGET_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/projects/)
 
-set_property(GLOBAL PROPERTY LIBSAPI)
+file(REMOVE_RECURSE ${CMAKE_BINARY_DIR}/bin)
 
-macro (add_lib_api libapi)
-    set_property(GLOBAL APPEND PROPERTY LIBSAPI "${libapi}")
-endmacro()
+add_library(MSDK_MODULES INTERFACE)
 
-macro (add_lib libname)
-    set_property(GLOBAL APPEND PROPERTY LIBS "${libname}")
-endmacro()
+add_library(MSDK_CORE_API INTERFACE)
 
 add_definitions(
     -DCFG_RTOS
@@ -98,15 +94,13 @@ target_link_directories(${TARGET_EXE}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plf/riscv/NMSIS/Library/DSP/GCC
     )
 
-get_property(list_lib GLOBAL PROPERTY LIBS)
 
-message(STATUS "libs ${list_lib}")
 
-get_property(list_lib_inc GLOBAL PROPERTY LIBSAPI)
+get_target_property(MSDK_MODULE_PATHS MSDK_MODULES INTERFACE_LINK_LIBRARIES)
 
 target_link_libraries(${TARGET_EXE}
     PRIVATE
-        ${list_lib_inc}
+        MSDK_CORE_API
         -Wl,--start-group
         wifi
         rf
@@ -116,8 +110,9 @@ target_link_libraries(${TARGET_EXE}
         nmsis_dsp_rv32imafcbp
         m
         iperf3
-        ${list_lib}
-        -Wl,--end-group
+        ${MSDK_MODULE_PATHS}
+        -Wl,--whole-archive riscv -Wl,--no-whole-archive
+    -Wl,--end-group
     )
 
 target_link_options(${TARGET_EXE}

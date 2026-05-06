@@ -275,7 +275,24 @@ DRESULT disk_ioctl (
         break;
     case GET_BLOCK_SIZE:
         break;
+
+    case CTRL_TRIM:
+    {
+        LBA_t start_sector = *(LBA_t *)buff;
+        UINT count = *((LBA_t *)buff + 1) - start_sector + 1;
+        if (start_sector == 0) {
+            break;
+        }
+        else if (count > ((FATFS_FULL_MEM_SIZE >> 3) / FATFS_SECTOR_SIZE)) // it may first init fatfs to erase, do not need to erase large flash, it takes too much time
+        {
+            break;
+        }
+        return fs_flash_erase(start_sector, count);
     }
+        break;
+    }
+
+
 
     return RES_OK;
 #if 0

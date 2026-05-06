@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# set custom OpenOCD path
+# export OPENOCD_PATH=/path/to/openocd/bin
+# set custom toolchain path
+# export TOOLCHAIN_PATH=/path/to/toolchain/bin
+
 if [[ -n $1 ]]; then
     APP=$1
     if [[ -n $2 ]]; then
@@ -17,6 +22,15 @@ if [[ ! -e $PWD/MSDK/${APP} ]]; then
     exit 1
 fi
 
+# toolchain check and setup
+# Check for custom toolchain path first
+if [[ -n "$TOOLCHAIN_PATH" ]]; then
+    if [[ -e "$TOOLCHAIN_PATH" ]]; then
+        echo "Using custom toolchain path: $TOOLCHAIN_PATH"
+        export PATH=$PATH:$TOOLCHAIN_PATH
+    fi
+fi
+
 if ! type riscv-nuclei-elf-gcc > /dev/null 2>&1; then
     if [[ ! -e ./tools/gd32vw55x_toolchain_linux ]]; then
         if [[ -e ./tools/gd32vw55x_toolchain_linux.tar.gz00 ]]; then
@@ -28,7 +42,19 @@ if ! type riscv-nuclei-elf-gcc > /dev/null 2>&1; then
             exit 1
         fi
     fi
+    echo "Using toolchain path: $PWD/tools/gd32vw55x_toolchain_linux/bin"
     export PATH=$PATH:$PWD/tools/gd32vw55x_toolchain_linux/bin
+else
+    echo "Toolchain found in PATH: $(which riscv-nuclei-elf-gcc)"
+fi
+
+# OpenOCD check and setup
+# Check for custom OpenOCD path first
+if [[ -n "$OPENOCD_PATH" ]]; then
+    if [[ -e "$OPENOCD_PATH" ]]; then
+        echo "Using custom OpenOCD path: $OPENOCD_PATH"
+        export PATH=$PATH:$OPENOCD_PATH
+    fi
 fi
 
 if ! type openocd > /dev/null 2>&1; then
@@ -41,7 +67,10 @@ if ! type openocd > /dev/null 2>&1; then
             exit 1
         fi
     fi
+    echo "Using OpenOCD path: $PWD/tools/xpack-openocd-0.11.0-3_linux/bin"
     export PATH=$PATH:$PWD/tools/xpack-openocd-0.11.0-3_linux/bin
+else
+    echo "OpenOCD found in PATH: $(which openocd)"
 fi
 
 

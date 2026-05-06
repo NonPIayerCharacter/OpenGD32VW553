@@ -6,40 +6,55 @@ REM DEBUGGER: GDLink, JLink
 
 setlocal enabledelayedexpansion
 
-set TARGET=%1
-set DEBUGGER=%2
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+set "WORK_DIR=%SCRIPT_DIR%\.."
+for %%I in ("%WORK_DIR%") do set "WORK_DIR=%%~fI"
+set "LOCAL_OPENOCD_BIN=%WORK_DIR%\tools\xpack-openocd-0.11.0-3_windows\bin"
+
+set "TARGET=%~1"
+set "DEBUGGER=%~2"
 
 REM set custom OpenOCD path
 ::set OPENOCD_PATH=path/to/openocd/bin
 
 REM OpenOCD check and setup
-:: Check for custom OpenOCD path first
-if NOT "%OPENOCD_PATH%"=="" (
-    if EXIST "%OPENOCD_PATH%" (
-        echo Using custom OpenOCD path: %OPENOCD_PATH%
-        SET "PATH=%PATH%;%OPENOCD_PATH%"
+:: Prefer the repo-local OpenOCD first
+if EXIST "%LOCAL_OPENOCD_BIN%\openocd.exe" (
+    echo Using repo OpenOCD path: %LOCAL_OPENOCD_BIN%
+    SET "PATH=%LOCAL_OPENOCD_BIN%;%PATH%"
+    goto openocd_done
+)
+
+if EXIST "%WORK_DIR%\tools\xpack-openocd-0.11.0-3_windows.7z" (
+    echo Unzipping gd32vw55x OpenOCD .......
+    "%PROGRAMFILES%\7-Zip\7z.exe" x "%WORK_DIR%\tools\xpack-openocd-0.11.0-3_windows.7z" -o"%WORK_DIR%\tools"
+    if EXIST "%LOCAL_OPENOCD_BIN%\openocd.exe" (
+        echo Using repo OpenOCD path: %LOCAL_OPENOCD_BIN%
+        SET "PATH=%LOCAL_OPENOCD_BIN%;%PATH%"
         goto openocd_done
     )
 )
 
-:: Check if OpenOCD is found in PATH
+:: Fallback to a custom OpenOCD path
+if NOT "%OPENOCD_PATH%"=="" (
+    if EXIST "%OPENOCD_PATH%" (
+        echo Using custom OpenOCD path: %OPENOCD_PATH%
+        SET "PATH=%OPENOCD_PATH%;%PATH%"
+        goto openocd_done
+    )
+)
+
+:: Finally, use whatever is already in PATH
 where openocd >NUL 2>&1
 
-:: Check if OpenOCD is found in %CD%\tools
 if ERRORLEVEL 1 (
-    IF NOT EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows" (
-        IF EXIST "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" (
-            echo Unzipping gd32vw55x OpenOCD .......
-            "%PROGRAMFILES%\7-Zip\7z.exe" x "%CD%\tools\xpack-openocd-0.11.0-3_windows.7z" -o"%CD%\tools"
-        ) ELSE (
-            echo "Please download the gd32vw55x OpenOCD from the website and put it in PATH"
-            EXIT /B 1
-        )
-    )
-    SET "PATH=%PATH%;%CD%\tools\xpack-openocd-0.11.0-3_windows\bin"
+    echo Please download the gd32vw55x OpenOCD into tools or put it in PATH
+    EXIT /B 1
 ) else (
     for /f "delims=" %%i in ('where openocd') do (
         echo OpenOCD found in PATH: %%i
+        goto openocd_done
     )
 )
 
@@ -49,9 +64,6 @@ REM Default to MSDK if target not specified
 if "%TARGET%"=="" set TARGET=MSDK
 REM Default to GDLink if debugger not specified
 if "%DEBUGGER%"=="" set DEBUGGER=GDLink
-
-cd /d "%~dp0\.."
-set WORK_DIR=%cd%
 
 REM Validate target
 if /i not "%TARGET%"=="MSDK" if /i not "%TARGET%"=="MBL" if /i not "%TARGET%"=="ALL" (
@@ -89,6 +101,7 @@ if /i "%DEBUGGER%"=="GDLink" (
 
 REM Convert backslashes to forward slashes for OpenOCD compatibility
 set BIN_FILE=!BIN_FILE:\=/!
+set CONFIG_FILE=!CONFIG_FILE:\=/!
 
 echo.
 echo Target: %TARGET%
@@ -98,7 +111,15 @@ echo Flash Address: %FLASH_ADDR%
 echo.
 
 REM Run OpenOCD with appropriate config
-"openocd.exe" -f "!CONFIG_FILE!" -c "init" -c "program !BIN_FILE! %FLASH_ADDR% verify reset" -c "exit"
+set "OPENOCD_EXE=openocd.exe"
+for /f "delims=" %%i in ('where openocd 2^>NUL') do (
+    if /i "%%~nxi"=="openocd.exe" if not defined OPENOCD_RESOLVED (
+        set "OPENOCD_RESOLVED=%%i"
+    )
+)
+if defined OPENOCD_RESOLVED set "OPENOCD_EXE=!OPENOCD_RESOLVED!"
+
+"!OPENOCD_EXE!" -f "!CONFIG_FILE!" -c "init" -c "program \"!BIN_FILE!\" %FLASH_ADDR% verify reset" -c "exit"
 
 if errorlevel 1 (
     echo.

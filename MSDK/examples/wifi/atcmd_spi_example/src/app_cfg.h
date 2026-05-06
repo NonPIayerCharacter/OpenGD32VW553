@@ -37,6 +37,12 @@ OF SUCH DAMAGE.
 
 #include "platform_def.h"
 
+#define CONFIG_DEBUG_PRINT_ENABLE
+
+#undef CFG_WLAN_SUPPORT
+#undef CFG_BLE_SUPPORT
+#undef CFG_COEX
+
 #define SPI_ROLE                        SPI_ROLE_MASTER
 
 #define SPI_ROLE_MASTER                 1

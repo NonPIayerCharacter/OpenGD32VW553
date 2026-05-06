@@ -310,16 +310,6 @@
 			<locationURI>PARENT-1-PROJECT_LOC/src/websocket_client_main.c</locationURI>
 		</link>
 		<link>
-			<name>tinyws/tinyws.c</name>
-			<type>1</type>
-			<locationURI>PARENT-4-PROJECT_LOC/lwip/tinyws/tinyws.c</locationURI>
-		</link>
-		<link>
-			<name>tinyws/ws_ssl.c</name>
-			<type>1</type>
-			<locationURI>PARENT-4-PROJECT_LOC/lwip/tinyws/ws_ssl.c</locationURI>
-		</link>
-		<link>
 			<name>mbedtls/mbedtls</name>
 			<type>2</type>
 			<locationURI>virtual:/virtual</locationURI>
@@ -453,6 +443,11 @@
 			<name>lwip/.settings/language.settings.xml</name>
 			<type>1</type>
 			<locationURI>PARENT-4-PROJECT_LOC/lwip/.settings/language.settings.xml</locationURI>
+		</link>
+		<link>
+			<name>mbedtls/mbedtls/.github</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
 		</link>
 		<link>
 			<name>mbedtls/mbedtls/aes.c</name>

@@ -196,7 +196,7 @@ static ble_status_t ble_sample_srv_read_cb(uint8_t conn_idx, ble_gatts_read_req_
 {
     switch (p_req->att_idx) {
     case BLE_SAMPLE_SRV_IDX_READ_HANDLE_VAL: {
-        uint8_t read_buf[BLE_SAMPLE_DATA_LENGTH] = {0x22, 0x22};
+        uint8_t read_buf[BLE_SAMPLE_DATA_LENGTH] = {0x41, 0x41};
 
         p_req->val_len = BLE_SAMPLE_DATA_LENGTH;
         p_req->att_len = BLE_SAMPLE_DATA_LENGTH;

@@ -300,6 +300,8 @@ OF SUCH DAMAGE.
 #define WLAN_REASON_END_TS_BA_DLS                       37
 #define WLAN_REASON_UNKNOWN_TS_BA                       38
 #define WLAN_REASON_TIMEOUT                             39
+// reason 40-44 is reserved
+#define WLAN_REASON_GD_MESH_SMART_AP_RESET              40 // GD modified
 #define WLAN_REASON_PEERKEY_MISMATCH                    45
 #define WLAN_REASON_AUTHORIZED_ACCESS_LIMIT_REACHED     46
 #define WLAN_REASON_EXTERNAL_SERVICE_REQUIREMENTS       47

@@ -84,6 +84,11 @@ OF SUCH DAMAGE.
 #include "lwip/stats.h"
 #include "dbg_print.h"
 
+static inline u32_t TicksToMS(u32_t ticks)
+{
+    return (ticks * OS_MS_PER_TICK);
+}
+
 /*---------------------------------------------------------------------------*
  * Routine:  sys_mbox_new
  *---------------------------------------------------------------------------*
@@ -404,7 +409,8 @@ void sys_init(void)
 
 u32_t sys_now(void)
 {
-    return sys_os_now(false);
+    u32_t ticks = sys_os_now(false);
+    return TicksToMS(ticks);
 }
 
 /*---------------------------------------------------------------------------*

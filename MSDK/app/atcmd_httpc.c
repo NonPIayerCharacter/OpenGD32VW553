@@ -78,6 +78,8 @@ static httpc_connection_t httpc_settings;
 static httpc_state_t *httpc_connection = NULL;
 static uint32_t http_content_len, http_received_len;
 
+static uint8_t httpc_cmd_done = 1;
+
 /**
  * parse HTTP URL to get host and path
  */
@@ -351,12 +353,19 @@ Usage:
     return 0;
 }
 
-// 传输结果回调
+// Transmission Result Callback
 static void httpc_result_cb(void *arg, httpc_result_t httpc_result, u32_t rx_content_len, u32_t srv_res, err_t err)
 {
     httpc_connection_t *conn_settings = (httpc_connection_t *)arg;
 
     if (httpc_result == HTTPC_RESULT_OK) {
+
+        if ((http_content_len == 0) && ((conn_settings->atcmd_idx == 0) || (conn_settings->atcmd_idx == 2))) { // HTTPCLIENT or HTTPCGET
+            AT_RSP_START(16);
+            AT_RSP("\r\n");
+            AT_RSP_OK();
+        }
+
         AT_TRACE("Transfer completed!\n");
     } else {
         AT_TRACE("Transfer failed: %d\n", httpc_result);
@@ -387,6 +396,8 @@ static void httpc_result_cb(void *arg, httpc_result_t httpc_result, u32_t rx_con
         altcp_tls_free_entropy();
     }
 #endif
+
+    httpc_cmd_done = 1;
 }
 
 // callback function when http header receiced complete
@@ -394,7 +405,15 @@ static err_t httpc_headers_done_cb(httpc_state_t *connection, void *arg, struct 
 {
     err_t ret;
     httpc_connection_t *conn_settings = (httpc_connection_t *)arg;
-    http_content_len = content_len;
+
+    // 处理 Content-Length 未知的情况（chunked transfer 或无 Content-Length）
+    if (content_len == 0xFFFFFFFF) {
+        http_content_len = 0;  // 表示长度未知
+        AT_TRACE("Content-Length unknown (chunked or not specified)\n");
+    } else {
+        http_content_len = content_len;
+    }
+
     char at_rsp_hdr[64] = {0};
     int at_rsp_hdr_len;
 
@@ -458,12 +477,15 @@ static err_t httpc_altcp_recv_cb(void *arg, struct altcp_pcb *conn, struct pbuf 
         altcp_recved(conn, p->tot_len);
         pbuf_free(p);
 
-        // 打印进度
+        // printing progress
         if (http_content_len > 0) {
             AT_TRACE("Progress: %.1f%%\r", (http_received_len * 100.0) / http_content_len);
+        } else {
+            // Content-Length 未知，只显示已接收字节数
+            AT_TRACE("Received: %u bytes\r", http_received_len);
         }
 
-        if (http_received_len == http_content_len) {
+        if (http_content_len > 0 && http_received_len >= http_content_len) {
             AT_TRACE("\nreceived completed.\n");
             http_received_len = 0;
 
@@ -574,6 +596,13 @@ void at_httpc_req_send(int argc, char **argv)
     uint16_t server_port;
     httpc_req_info_t req_info;
 
+
+    if (!httpc_cmd_done) {
+        AT_TRACE("Previous HTTP command is still in progress.\r\n");
+        return;
+    }
+    httpc_cmd_done = 0;
+
     sys_memset(&req_info, 0, sizeof(httpc_req_info_t));
 
     // init default value
@@ -585,11 +614,12 @@ void at_httpc_req_send(int argc, char **argv)
     ret = httpc_parse_req_args(argc, argv, &req_info);
     if (ret < 0) {
         AT_TRACE("parse http client request args fail! ret = %d\r\n", ret);
-        return;
+        goto END;
     }
 
-    if ((ret == 0) && (argc == 2))
-        return;
+    if ((ret == 0) && (argc == 2)) {
+        goto END;
+    }
 
     // init http client connection
     sys_memset(&httpc_settings, 0, sizeof(httpc_connection_t));
@@ -611,8 +641,12 @@ void at_httpc_req_send(int argc, char **argv)
         goto END;
     }
 
+    httpc_free_req_info(&req_info);
+    return;
+
 END:
     httpc_free_req_info(&req_info);
+    httpc_cmd_done = 1;
 }
 
 static int httpc_parse_getsize_args(int argc, char **argv, httpc_req_info_t *req_info)
@@ -717,6 +751,12 @@ void at_httpc_getsize(int argc, char **argv)
     uint16_t server_port;
     httpc_req_info_t req_info;
 
+    if (!httpc_cmd_done) {
+        AT_TRACE("Previous HTTP command is still in progress.\r\n");
+        return;
+    }
+    httpc_cmd_done = 0;
+
     sys_memset(&req_info, 0, sizeof(httpc_req_info_t));
 
     req_info.method = HEAD;
@@ -725,11 +765,12 @@ void at_httpc_getsize(int argc, char **argv)
     ret = httpc_parse_getsize_args(argc, argv, &req_info);
     if (ret < 0) {
         AT_TRACE("parse http client getsize args fail! ret = %d\r\n", ret);
-        return;
+        goto END;
     }
 
-    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION))
-        return;
+    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION)) {
+        goto END;
+    }
 
     // init http client connection
     sys_memset(&httpc_settings, 0, sizeof(httpc_connection_t));
@@ -751,8 +792,12 @@ void at_httpc_getsize(int argc, char **argv)
         goto END;
     }
 
+    httpc_free_req_info(&req_info);
+    return;
+
 END:
     httpc_free_req_info(&req_info);
+    httpc_cmd_done = 1;
 }
 
 void at_httpc_get(int argc, char **argv)
@@ -762,6 +807,12 @@ void at_httpc_get(int argc, char **argv)
     uint16_t server_port;
     httpc_req_info_t req_info;
 
+    if (!httpc_cmd_done) {
+        AT_TRACE("Previous HTTP command is still in progress.\r\n");
+        return;
+    }
+    httpc_cmd_done = 0;
+
     sys_memset(&req_info, 0, sizeof(httpc_req_info_t));
 
     req_info.method = GET;
@@ -770,11 +821,12 @@ void at_httpc_get(int argc, char **argv)
     ret = httpc_parse_getsize_args(argc, argv, &req_info);
     if (ret < 0) {
         AT_TRACE("parse http client get args fail! ret = %d\r\n", ret);
-        return;
+        goto END;
     }
 
-    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION))
-        return;
+    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION)) {
+        goto END;
+    }
 
     // init http client connection
     sys_memset(&httpc_settings, 0, sizeof(httpc_connection_t));
@@ -796,8 +848,12 @@ void at_httpc_get(int argc, char **argv)
         goto END;
     }
 
+    httpc_free_req_info(&req_info);
+    return;
+
 END:
     httpc_free_req_info(&req_info);
+    httpc_cmd_done = 1;
 }
 
 static int httpc_parse_post_args(int argc, char **argv, httpc_req_info_t *req_info)
@@ -937,6 +993,12 @@ void at_httpc_post(int argc, char **argv)
     uint16_t server_port;
     httpc_req_info_t req_info;
 
+    if (!httpc_cmd_done) {
+        AT_TRACE("Previous HTTP command is still in progress.\r\n");
+        return;
+    }
+    httpc_cmd_done = 0;
+
     sys_memset(&req_info, 0, sizeof(httpc_req_info_t));
 
     req_info.method = POST;
@@ -948,11 +1010,12 @@ void at_httpc_post(int argc, char **argv)
     ret = httpc_parse_post_args(argc, argv, &req_info);
     if (ret < 0) {
         AT_TRACE("parse http client post args fail! ret = %d\r\n", ret);
-        return;
+        goto END;
     }
 
-    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION))
-        return;
+    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION)) {
+        goto END;
+    }
 
     // init http client connection
     sys_memset(&httpc_settings, 0, sizeof(httpc_connection_t));
@@ -974,8 +1037,12 @@ void at_httpc_post(int argc, char **argv)
         goto END;
     }
 
+    httpc_free_req_info(&req_info);
+    return;
+
 END:
     httpc_free_req_info(&req_info);
+    httpc_cmd_done = 1;
 }
 
 void at_httpc_put(int argc, char **argv)
@@ -984,6 +1051,12 @@ void at_httpc_put(int argc, char **argv)
     err_t err;
     uint16_t server_port;
     httpc_req_info_t req_info;
+
+    if (!httpc_cmd_done) {
+        AT_TRACE("Previous HTTP command is still in progress.\r\n");
+        return;
+    }
+    httpc_cmd_done = 0;
 
     sys_memset(&req_info, 0, sizeof(httpc_req_info_t));
 
@@ -996,11 +1069,12 @@ void at_httpc_put(int argc, char **argv)
     ret = httpc_parse_post_args(argc, argv, &req_info);
     if (ret < 0) {
         AT_TRACE("parse http client post args fail! ret = %d\r\n", ret);
-        return;
+        goto END;
     }
 
-    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION))
-        return;
+    if ((ret == 0) && (argc == 2) && (argv[1][0] == AT_QUESTION)) {
+        goto END;
+    }
 
     // init http client connection
     sys_memset(&httpc_settings, 0, sizeof(httpc_connection_t));
@@ -1022,8 +1096,12 @@ void at_httpc_put(int argc, char **argv)
         goto END;
     }
 
+    httpc_free_req_info(&req_info);
+    return;
+
 END:
     httpc_free_req_info(&req_info);
+    httpc_cmd_done = 1;
 }
 
 void at_httpc_url_cfg(int argc, char **argv)
@@ -1224,4 +1302,3 @@ Usage:
     return;
 }
 #endif
-

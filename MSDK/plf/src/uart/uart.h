@@ -178,8 +178,7 @@ typedef struct _uart_config {
     uint32_t flow_ctrl;
 } uart_config_t;
 
-typedef struct uart_cb_item
-{
+typedef struct uart_cb_item {
     uint32_t uart_port;
     uart_rx_irq_hdl_t callback;
 } uart_cb_item_t;

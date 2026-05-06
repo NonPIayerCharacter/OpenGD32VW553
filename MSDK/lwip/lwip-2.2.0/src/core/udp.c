@@ -12,7 +12,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * Copyright (c) 2024, GigaDevice Semiconductor Inc.
+ * Copyright (c) 2026, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -63,6 +63,7 @@
 #include "lwip/stats.h"
 #include "lwip/snmp.h"
 #include "lwip/dhcp.h"
+#include "lwip/ip4_napt.h" /* GD modified */
 
 #include <string.h>
 
@@ -107,6 +108,14 @@ again:
   if (udp_port++ == UDP_LOCAL_PORT_RANGE_END) {
     udp_port = UDP_LOCAL_PORT_RANGE_START;
   }
+/* GD modified */
+#if IP_NAPT
+  if (ip_napt_find_port(IP_PROTO_UDP, PP_NTOHS(udp_port))) {
+    /* If NAPT is enabled, skip the ports used by NAPT */
+    goto again;
+  }
+#endif
+/* GD modified end */
   /* Check all PCBs. */
   for (pcb = udp_pcbs; pcb != NULL; pcb = pcb->next) {
     if (pcb->local_port == udp_port) {

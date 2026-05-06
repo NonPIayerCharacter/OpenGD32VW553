@@ -1,6 +1,5 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.7)
 
-add_library(lwIP_api INTERFACE)
 add_library(lwIP)
 
 set(LWIP_DIR ${CMAKE_CURRENT_SOURCE_DIR})
@@ -68,14 +67,11 @@ set(lwipnetif_SRCS
 
 # AppFiles
 
+#[[
 set(lwipapp_SRCS
-    ${LWIP_DIR}/src/apps/sntp/sntp.c
-    ${LWIP_DIR}/src/apps/mqtt/mqtt.c
-    ${LWIP_DIR}/src/apps/mqtt/mqtt5.c
-    ${LWIP_DIR}/src/apps/altcp_tls/altcp_tls_mbedtls_mem.c
-    ${LWIP_DIR}/src/apps/altcp_tls/altcp_tls_mbedtls.c
+    ${LWIP_DIR}/apps/ping/ping.c
 )
-
+]]
 
 target_sources(lwIP
     PRIVATE
@@ -84,23 +80,22 @@ target_sources(lwIP
         ${lwipapi_SRCS}
         ${lwipnetif_SRCS}
         ${lwipport_SRCS}
-        ${lwipapp_SRCS}
+#        ${lwipapp_SRCS}
 )
 
-target_include_directories(lwIP_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/include/lwip>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/port>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/include/compat/posix>
-)
 
+
+set(LWIP_INCLUDE_REL_PATHS
+    src/include
+    src/include/lwip
+    port
+    src/include/compat/posix
+)
+msdk_agg_api(lwIP_api ${LWIP_INCLUDE_REL_PATHS})
 
 target_include_directories(lwIP
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/port/arch>
-    PRIVATE
-        ${PROJECT_SOURCE_DIR}/MSDK/app/mqtt_app
 )
 
 target_link_libraries(lwIP
@@ -110,8 +105,7 @@ target_link_libraries(lwIP
     wifi_mgmt_api
     riscv_api
     util_api
-    mbedtls_api
 )
 
-add_lib_api(lwIP_api)
-add_lib(lwIP)
+msdk_agg_module(lwIP)
+

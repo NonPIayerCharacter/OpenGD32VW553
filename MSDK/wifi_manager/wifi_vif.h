@@ -51,6 +51,7 @@ OF SUCH DAMAGE.
 /*============================ MACROS ========================================*/
 #define WIFI_SSID_MAX_LEN       32
 #define WIFI_ALEN               6
+#define WIFI_HOSTNAME_MAX_LEN   32
 
 #define WPAS_MIN_PASSPHRASE_LEN 8
 #define WPAS_MAX_PASSPHRASE_LEN 63
@@ -160,8 +161,12 @@ struct sta_cfg {
     struct wps_config_t wps_cfg;
 #endif
     uint8_t mfpr; /* 1: MFP required */
+    uint8_t mfpr_user_setted; /* whether mfpr is set by user */
     uint8_t conn_blocked;
     uint8_t flush_cache_req;
+    uint8_t scan_mode; /* 0: fast scan (connect to first found AP), 1: all channel scan (connect to strongest AP) */
+    uint8_t scan_mode_user_setted; /* whether scan_mode is set by user */
+    uint8_t pci_en; /* PCI certification: 0=allow all encryption (including OPEN/WEP), 1=exclude OPEN/WEP */
     struct md_ie md;
 };  //24 dwords
 
@@ -275,6 +280,7 @@ struct ap_cfg {
     uint8_t he_disabled;
     uint8_t bcn_interval;
     uint8_t dtim_period;
+    uint8_t max_conn;  // Maximum number of stations allowed to connect
 #ifdef CONFIG_WPA_SUPPLICANT
     struct ap_sae_pk sae_pk;
 #endif
@@ -320,6 +326,9 @@ struct wifi_vif_tag
     // WVIF type
     enum wifi_vif_type wvif_type;
 
+    // User-defined hostname (for STA mode)
+    char user_hostname[WIFI_HOSTNAME_MAX_LEN + 1];
+
     // WiFi Network information
     union {
         struct wifi_sta sta;
@@ -360,5 +369,8 @@ int wifi_vif_is_sta_connected(int vif_idx);
 int wifi_vif_idx_from_name(const char *name);
 uint32_t wifi_vif_history_ip_get(void);
 void wifi_vif_user_addr_set(uint8_t *user_addr);
+int wifi_vif_hostname_set(int vif_idx, const char *hostname);
+const char *wifi_vif_hostname_get(int vif_idx);
+int wifi_vif_ap_set_max_conn(int vif_idx, uint8_t max_conn);
 
 #endif /* _WIFI_VIF_H_ */

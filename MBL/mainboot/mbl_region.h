@@ -54,7 +54,7 @@ OF SUCH DAMAGE.
 /* SRAM: Global varaiables, STACK, HEAP*/
 #define MBL_DATA_START                      (RE_SRAM_BASE + RE_MBL_DATA_START)  /* skip rom variables */
 #define MBL_BUF_SIZE                        (0x3000)
-#define MBL_DATA_SIZE                       (0x600 + MBL_MSP_STACK_SIZE + MBL_BUF_SIZE)
+#define MBL_DATA_SIZE                       (0x1000 + MBL_MSP_STACK_SIZE + MBL_BUF_SIZE)
 #define MBL_MSP_STACK_SIZE                  (0x1000)
 
 #endif  // __MBL_REGION_H__

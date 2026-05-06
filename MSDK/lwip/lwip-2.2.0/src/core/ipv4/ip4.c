@@ -8,6 +8,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * Copyright (c) 2025, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -56,6 +57,9 @@
 #include "lwip/autoip.h"
 #include "lwip/stats.h"
 #include "lwip/prot/iana.h"
+/* GD modified */
+#include "lwip/ip4_napt.h"
+/* GD modified end */
 
 #include <string.h>
 
@@ -268,6 +272,79 @@ ip4_canforward(struct pbuf *p)
   return 1;
 }
 
+/* GD modified */
+#if IP_NAPT
+static void
+ip4_recompute_checksums_for_forward(struct pbuf *p, struct ip_hdr *iphdr)
+{
+  u16_t iphdr_hlen = IPH_HL_BYTES(iphdr);
+
+#if CHECKSUM_GEN_IP
+  IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_IP) {
+    IPH_CHKSUM_SET(iphdr, inet_chksum(iphdr, iphdr_hlen));
+  }
+#endif
+
+  switch (IPH_PROTO(iphdr)) {
+#if LWIP_UDP && CHECKSUM_GEN_UDP
+    case IP_PROTO_UDP:
+#if LWIP_UDPLITE
+    case IP_PROTO_UDPLITE:
+#endif
+    {
+      struct udp_hdr *udphdr = (struct udp_hdr *)((u8_t *)iphdr + iphdr_hlen);
+      if (udphdr->chksum == 0) {
+        IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_UDP) {
+          ip4_addr_t src_addr, dest_addr;
+          ip4_addr_copy(src_addr, iphdr->src);
+          ip4_addr_copy(dest_addr, iphdr->dest);
+
+          udphdr->chksum = ip_chksum_pseudo(p, IP_PROTO_UDP, p->tot_len - iphdr_hlen,
+                                          &src_addr, &dest_addr);
+          if (udphdr->chksum == 0) {
+            udphdr->chksum = 0xffff;
+          }
+        }
+      }
+      break;
+    }
+#endif
+#if LWIP_TCP && CHECKSUM_GEN_TCP
+    case IP_PROTO_TCP:
+    {
+      struct tcp_hdr *tcphdr = (struct tcp_hdr *)((u8_t *)iphdr + iphdr_hlen);
+      if (tcphdr->chksum == 0) {
+        IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_TCP) {
+          ip4_addr_t src_addr, dest_addr;
+          ip4_addr_copy(src_addr, iphdr->src);
+          ip4_addr_copy(dest_addr, iphdr->dest);
+
+          tcphdr->chksum = ip_chksum_pseudo(p, IP_PROTO_TCP, p->tot_len - iphdr_hlen,
+                                          &src_addr, &dest_addr);
+        }
+      }
+      break;
+    }
+#endif
+#if LWIP_ICMP && CHECKSUM_GEN_ICMP
+    case IP_PROTO_ICMP:
+    {
+      struct icmp_hdr *icmphdr = (struct icmp_hdr *)((u8_t *)iphdr + iphdr_hlen);
+      if (icmphdr->chksum == 0) {
+        IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_ICMP) {
+          icmphdr->chksum = inet_chksum(icmphdr, p->tot_len - iphdr_hlen);
+        }
+      }
+      break;
+    }
+#endif
+    default:
+      break;
+  }
+}
+#endif
+/* GD modified end */
+
 /**
  * Forwards an IP packet. It finds an appropriate route for the
  * packet, decrements the TTL value of the packet, adjusts the
@@ -328,6 +405,20 @@ ip4_forward(struct pbuf *p, struct ip_hdr *iphdr, struct netif *inp)
 #endif /* LWIP_ICMP */
     return;
   }
+
+/* GD modified */
+#if IP_NAPT
+  /* If the output netif uses NAPT, we will not perform NAPT forwarding
+    (because NAPT netif will not search the NAPT table on ip4_input)
+  */
+  if (!netif->napt) {
+    if (ip_napt_forward(p, iphdr, inp, netif) != ERR_OK) {
+      LWIP_DEBUGF(IP_DEBUG, ("forward error\r\n"));
+      return;
+    }
+  }
+#endif
+/* GD modified end */
 
   /* Incrementally update the IP checksum. */
   if (IPH_CHKSUM(iphdr) >= PP_HTONS(0xffffU - 0x100)) {
@@ -396,7 +487,29 @@ ip4_forward(struct pbuf *p, struct ip_hdr *iphdr, struct netif *inp)
     return;
   }
   /* transmit pbuf on chosen interface */
+/* GD modified */
+#if IP_NAPT
+  if (p->type_internal == PBUF_REF)
+  {
+      struct pbuf *q = pbuf_clone(PBUF_LINK, PBUF_RAM, p);
+      if (q != NULL) {
+          iphdr = (struct ip_hdr *)q->payload;
+          ip4_recompute_checksums_for_forward(q, iphdr);
+          netif->output(netif, q, ip4_current_dest_addr());
+          pbuf_free(q);
+      } else {
+          MIB2_STATS_INC(mib2.ipinaddrerrors);
+          MIB2_STATS_INC(mib2.ipindiscards);
+      }
+  } else {
+    ip4_recompute_checksums_for_forward(p, iphdr);
+    netif->output(netif, p, ip4_current_dest_addr());
+  }
+#else
+  ip4_recompute_checksums_for_forward(p, iphdr);
   netif->output(netif, p, ip4_current_dest_addr());
+#endif /* IP_NAPT */
+/* GD modified end */
   return;
 return_noroute:
   MIB2_STATS_INC(mib2.ipoutnoroutes);
@@ -544,6 +657,18 @@ ip4_input(struct pbuf *p, struct netif *inp)
     }
   }
 #endif
+
+/* GD modified */
+#if IP_NAPT
+   /* for unicast packet, check NAPT table and modify dest if needed.
+    Process packets returning from external network to router,
+    restore destination address from public to private address
+    by looking up NAPT table
+  */
+  if (!inp->napt && ip4_addr_cmp(&iphdr->dest, netif_ip4_addr(inp)))
+    ip_napt_recv(p, (struct ip_hdr *)iphdr);
+#endif
+/* GD modified end */
 
   /* copy IP addresses to aligned ip_addr_t */
   ip_addr_copy_from_ip4(ip_data.current_iphdr_dest, iphdr->dest);
@@ -1015,6 +1140,11 @@ ip4_output_if_opt_src(struct pbuf *p, const ip4_addr_t *src, const ip4_addr_t *d
   ip4_debug_print(p);
 
 #if ENABLE_LOOPBACK
+/* GD modified */
+#if IP_NAPT
+  /* doesn't work for external wifi interfaces */
+#else
+/* GD modified end */
   if (ip4_addr_eq(dest, netif_ip4_addr(netif))
 #if !LWIP_HAVE_LOOPIF
       || ip4_addr_isloopback(dest)
@@ -1029,6 +1159,7 @@ ip4_output_if_opt_src(struct pbuf *p, const ip4_addr_t *src, const ip4_addr_t *d
     netif_loop_output(netif, p);
   }
 #endif /* LWIP_MULTICAST_TX_OPTIONS */
+#endif /* IP_NAPT */ /* GD modified */
 #endif /* ENABLE_LOOPBACK */
 #if IP_FRAG
   /* don't fragment if interface has mtu set to 0 [loopif] */

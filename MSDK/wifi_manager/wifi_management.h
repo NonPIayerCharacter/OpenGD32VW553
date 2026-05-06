@@ -59,7 +59,7 @@ extern "C" {
 #define WIFI_MGMT_CONNECT_RETRY_LIMIT           3       // max retry times
 #define WIFI_MGMT_CONNECT_RETRY_INTERVAL        2000    // unit: ms (not less than EAPOL_TIMEROUT)
 
-#define WIFI_MGMT_MAX_RETRY_INTERVAL            300000  // unit: ms
+#define WIFI_MGMT_MAX_RETRY_INTERVAL            7200000 //300000  // unit: ms
 
 #define WIFI_MGMT_CONNECT_BLOCK_TIME    \
     (((WIFI_MGMT_CONNECT_RETRY_LIMIT) * (WIFI_MGMT_CONNECT_RETRY_LIMIT - 1) * \
@@ -300,6 +300,7 @@ extern void * wifi_mgmt_task_tcb;
 
 /*============================ LOCAL VARIABLES ===============================*/
 /*============================ PROTOTYPES ====================================*/
+void mgmt_connect_retry_param_set(wifi_management_sm_data_t *sm, uint8_t roaming_required);
 void wifi_mgmt_cb_run_state_machine(void *eloop_data, void *user_ctx);
 int wifi_management_concurrent_set(uint8_t enable);
 int wifi_management_concurrent_get(void);
@@ -319,6 +320,7 @@ int wifi_management_ap_start(char *ssid, char *passwd, uint32_t channel, wifi_ap
 int wifi_management_ap_delete_client(uint8_t *client_mac_addr);
 int wifi_management_ap_stop(void);
 int wifi_management_sta_start(void);
+int wifi_management_sta_auto_connect(void);
 int wifi_management_monitor_start(uint8_t channel, cb_macif_rx monitor_cb);
 int wifi_management_wps_start(bool is_pbc, char *pin, uint8_t blocked);
 int wifi_management_init(void);

@@ -73,7 +73,7 @@ OF SUCH DAMAGE.
 
 #define ELOOP_EVENT_ID(vif_idx, event) ((vif_idx << 12) + event)
 #define ELOOP_EVENT_GET_VIF(event_id)  ((event_id >> 12) & 0xF)
-#define ELOOP_EVENT_GET_EV(event_id)  (event_id & 0xFFF)
+#define ELOOP_EVENT_GET_EV(event_id)   (event_id & 0xFFF)
 
 /*============================ MACRO FUNCTIONS ===============================*/
 /* #define ELOOP_INSTALL_STATIC_EVENT(event, callback, eloop_data, user_ctx) \
@@ -147,12 +147,14 @@ int eloop_event_register(eloop_event_id_t event_id,
 
 /**
  * eloop_event_unregister - Unregister handler for a generic event
- * @event: Event to cancel (eloop implementation specific)
+ * @event_id: Event ID to cancel (eloop implementation specific)
+ * @handler: Callback function to be called when event is triggered
  *
  * Unregister a generic event notifier that was previously registered with
  * eloop_event_register().
  */
-void eloop_event_unregister(eloop_event_id_t event_id);
+void eloop_event_unregister(eloop_event_id_t event_id,
+                eloop_event_handler handler);
 
 /**
  * eloop_event_send - Send an event to the event loop

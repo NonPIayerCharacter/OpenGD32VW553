@@ -35,7 +35,7 @@ OF SUCH DAMAGE.
 #ifndef _CMD_GPIO_H_
 #define _CMD_GPIO_H_
 
-#include "app_cfg.h"
+#include <app_cfg.h>
 
 typedef enum gpio_check {
     GPIO_CHECK_SUCCESS = 1,

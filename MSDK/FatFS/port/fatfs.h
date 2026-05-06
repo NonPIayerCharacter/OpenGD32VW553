@@ -50,10 +50,11 @@ int fatfs_append(char *path, uint8_t *data, int len);
 int fatfs_delete(const char* path);
 int fatfs_create(char *path);
 uint32_t fatfs_read(char *path, uint8_t *buff, uint32_t len, uint32_t offset);
-int fatfs_show(char *path, uint8_t root_path);
+int fatfs_show(char *path, uint8_t root_path, bool at_stdout);
 int fatfs_rename(char *path, char *new_path);
 int fs_flash_write(LBA_t sector,const BYTE *buff, UINT count);
 int fs_flash_read(LBA_t sector, BYTE *buff, UINT count);
+int fs_flash_erase(LBA_t sector, UINT count);
 uint32_t fs_flash_size(void);
 #endif /* CONFIG_FATFS_SUPPORT */
 

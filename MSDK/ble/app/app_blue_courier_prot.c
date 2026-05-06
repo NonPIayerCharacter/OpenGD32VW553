@@ -73,6 +73,9 @@ typedef struct {
     struct cli_info cli[CFG_STA_NUM];
 } bcwp_wifi_status_t;
 
+static void bcwp_cb_scan_done(void *eloop_data, void *user_ctx);
+static void bcwp_cb_scan_fail(void *eloop_data, void *user_ctx);
+
 /*!
     \brief      Get wifi scan result information after scan is complete
     \param[in]  none
@@ -154,8 +157,8 @@ static void bcwp_wifi_scan_list_get(void)
 static void bcwp_cb_scan_done(void *eloop_data, void *user_ctx)
 {
     bcwp_wifi_scan_list_get();
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, bcwp_cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, bcwp_cb_scan_fail);
 }
 
 /*!
@@ -168,8 +171,8 @@ static void bcwp_cb_scan_done(void *eloop_data, void *user_ctx)
 static void bcwp_cb_scan_fail(void *eloop_data, void *user_ctx)
 {
     dbg_print(ERR, "ble config wifi scan cb failed\r\n");
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, bcwp_cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, bcwp_cb_scan_fail);
 }
 
 /*!
@@ -184,8 +187,8 @@ static void bcwp_wifi_scan(void)
     eloop_event_register(WIFI_MGMT_EVENT_SCAN_FAIL, bcwp_cb_scan_fail, NULL, NULL);
 
     if (wifi_management_scan(false, NULL) == -1) {
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, bcwp_cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, bcwp_cb_scan_fail);
         dbg_print(ERR, "ble config wifi scan failed\r\n");
     }
 }
@@ -201,7 +204,7 @@ static void bcwp_wifi_connect_success(void *eloop_data, void *user_ctx)
 {
     uint8_t state = 0;
 
-    eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS);
+    eloop_event_unregister(WIFI_MGMT_EVENT_DHCP_SUCCESS, bcwp_wifi_connect_success);
     bcwl_send(BCWL_OPCODE_BUILD(BCWL_OPCODE_TYPE_DATA, BCWL_OPCODE_DATA_SUBTYPE_STAMODE_CONNECT), &state, 1);
 }
 

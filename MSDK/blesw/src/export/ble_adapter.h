@@ -59,7 +59,8 @@ typedef enum
     BLE_ADP_EVT_TEST_TX_RSP,                /*!< Event notify for test tx mode response */
     BLE_ADP_EVT_TEST_RX_RSP,                /*!< Event notify for test rx mode response */
     BLE_ADP_EVT_TEST_END_RSP,               /*!< Event notify for end test mode response */
-    BLE_ADP_EVT_TEST_RX_PKT_INFO            /*!< Event notify for received packet information in test rx mode */
+    BLE_ADP_EVT_TEST_RX_PKT_INFO,           /*!< Event notify for received packet information in test rx mode */
+    BLE_ADP_EVT_PRIVACY_RECFG_RSP,
 } ble_adp_evt_t;
 
 /* BLE adapter information structure */
@@ -274,6 +275,8 @@ ble_status_t ble_adp_test_rx(uint8_t chann, uint8_t phy, uint8_t modulation_idx)
     \retval     ble_status_t: BLE_ERR_NO_ERROR on success, otherwise an error code
 */
 ble_status_t ble_adp_test_end(void);
+
+ble_status_t ble_adp_privacy_recfg(uint8_t privacy_cfg, uint8_t *p_private_identity);
 
 #ifdef __cplusplus
 }

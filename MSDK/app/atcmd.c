@@ -126,12 +126,10 @@ static volatile uint8_t at_cmd_received = 0;
 static uint8_t at_task_exit = 0;
 static const struct atcmd_entry atcmd_table[];
 
-static void at_hw_dma_receive(uint32_t address, uint32_t num);
 static void at_hw_send(char *data, int size);
 
 #ifdef CONFIG_ATCMD_SPI
 struct spi_manager_s spi_manager;
-void at_spi_rcv_atcmd_config(bool from_isr);
 static void at_spi_dma_receive_config(void);
 static void at_spi_irq_receive_config(void);
 static void at_spi_dma_receive_start(uint32_t address, uint32_t num);
@@ -144,7 +142,6 @@ static void at_uart_rx_irq_hdl(uint32_t usart_periph);
 static void at_uart_init(void);
 static void at_uart_send(char *data, int size);
 static void at_uart_dma_receive(uint32_t address, uint32_t num);
-
 static void at_uart_dma_receive_config(void);
 static void at_uart_irq_receive_config(void);
 static void at_uart_dma_receive_start(uint32_t address_0, uint32_t address_1, uint32_t num);
@@ -633,9 +630,9 @@ static void at_fs(int argc, char **argv)
             break;
         case FATFS_SHOW:
             if ((strlen(path) == 1) && (path[0] == '.')) {
-                res = fatfs_show(NULL, 1);
+                res = fatfs_show(NULL, 1, true);
             } else {
-                res = fatfs_show(path, 0);
+                res = fatfs_show(path, 0, true);
             }
             if (res != FR_OK) {
                 goto Error;
@@ -751,7 +748,7 @@ static void at_help(int argc, char **argv)
 #endif
 
 #ifdef CFG_BLE_SUPPORT
-#include "atcmd_ble.c"
+#include "..\ble\app\atcmd_ble.c"
 #endif
 #ifdef CONFIG_AZURE_F527_DEMO_SUPPORT
 #ifndef CONFIG_ATCMD_SPI
@@ -787,6 +784,7 @@ static const struct atcmd_entry atcmd_table[] = {
     {"AT+CWSTATUS", at_cw_status},
     {"AT+CWQAP", at_cw_ap_quit},
     {"AT+CWSAP_CUR", at_cw_ap_cur_start},
+    {"AT+CIPAP", at_cip_ap},
     {"AT+CWLIF", at_cw_ap_client_list},
     {"AT+CWAUTOCONN", at_cw_auto_connect},
     /* ====== TCPIP ====== */
@@ -886,6 +884,7 @@ static const struct atcmd_entry atcmd_table[] = {
     {"AT+BLENAME", at_ble_name},
     {"AT+BLEADDR", at_ble_bd_addr},
     {"AT+BLESETAUTH", at_ble_set_auth},
+    {"AT+BLESETKEY", at_ble_set_key},
     {"AT+BLEPAIR", at_ble_pair},
     {"AT+BLEENCRYPT", at_ble_encrypt},
     {"AT+BLEPASSKEY", at_ble_passkey},
@@ -904,8 +903,6 @@ static const struct atcmd_entry atcmd_table[] = {
     {"AT+BLEDADATRANS", at_ble_normal_trans_mode_enable},
     {"AT+BLEDADATRANSSEND", at_ble_normal_trans_mode_send},
     {"AT+BLEGATTSSVC", at_ble_gatts_list_svc},
-    {"AT+BLEGATTSCHAR", at_ble_gatts_list_char},
-    {"AT+BLEGATTSDESC", at_ble_gatts_list_desc},
     {"AT+BLEGATTSLISTALL", at_ble_gatts_list_all},
     {"AT+BLEGATTSNTF", at_ble_gatts_ntf},
     {"AT+BLEGATTSIND", at_ble_gatts_ind},
@@ -927,11 +924,6 @@ static const struct atcmd_entry atcmd_table[] = {
 #if (BLE_CFG_ROLE & (BLE_CFG_ROLE_OBSERVER | BLE_CFG_ROLE_CENTRAL))
     {"AT+BLESCANPARAM", at_ble_scan_param},
     {"AT+BLESCAN", at_ble_scan},
-
-#if (BLE_APP_PER_ADV_SUPPORT)
-    {"AT+BLESYNC", at_ble_sync},
-    {"AT+BLESYNCSTOP", at_ble_sync_stop},
-#endif // (BLE_APP_PER_ADV_SUPPORT)
 #endif // (BLE_CFG_ROLE & (BLE_CFG_ROLE_OBSERVER | BLE_CFG_ROLE_CENTRAL))
 
 #if (BLE_CFG_ROLE & (BLE_CFG_ROLE_PERIPHERAL | BLE_CFG_ROLE_CENTRAL))
@@ -955,48 +947,36 @@ static const struct atcmd_entry atcmd_table[] = {
 const uint32_t AT_CMD_TABLE_SZ = (sizeof(atcmd_table) / sizeof(atcmd_table[0]));
 
 #ifdef CONFIG_ATCMD_SPI
-
-#if 0
 int at_spi_hw_is_idle(void)
 {
-    if (spi_manager.stat ==SPI_Slave_Idle)
-        return 1;
+    /* CRITICAL: Check if Master is currently sending command
+     * Even if DMA count is 0, Master might have just started sending (SPI clock active).
+     * We can't trigger handshake while Master is in middle of sending command! */
 
-    if (spi_manager.stat == SPI_Slave_AT_Recv) {
-        if (spi_nss_status_get() == RESET) {
-            printf("nss error detected\r\n");
+    if ((spi_manager.stat == SPI_Slave_Idle) && (at_dma_get_cur_received_num(128) == 0)) {
+        return 1;
+    } else if (spi_manager.stat == SPI_Slave_AT_Recv) {
+        if (at_dma_get_cur_received_num(128) != 0) {
             return 0;
         }
-        if (at_dma_get_cur_received_num(128) != 0) {
-            printf("error detected, nss=%d\r\n", spi_nss_status_get());
+        /* received == 0, but need to verify Master truly finished or not started yet.
+         * Check if command was already received and processed */
+        if (at_cmd_received == 1) {
+            /* Command received but not yet processed - NOT idle */
             return 0;
-       } else {
-            return (spi_nss_status_get() == SET);
-       }
+        }
+        /* No data received, no command pending - truly idle */
+        return 1;
     }
     return 0;
 }
 
-#else
-int at_spi_hw_is_idle(void)
+void spi_manager_state_set(uint8_t state)
 {
-    if (spi_manager.stat ==SPI_Slave_Idle)
-        return 1;
-
-    if (spi_nss_status_get() == RESET)
-        return 0;
-
-    if (spi_manager.stat == SPI_Slave_AT_Recv) {
-        if (at_dma_get_cur_received_num(128) != 0) {
-            printf("error detected, nss=%d\r\n", spi_nss_status_get());
-            return 0;
-        }
-
-        return (spi_nss_status_get() == SET);
-    }
-    return 0;
+    AT_TRACE("%d->%d\r\n", spi_manager.stat, state);
+    spi_manager.stat = state;
 }
-#endif
+
 /*!
     \brief      function used when SPI slave send to master using SPI DMA Tx
                 function is mainly used when the input size is not fixed. An length
@@ -1010,17 +990,22 @@ void at_spi_send_with_handshake(char *data, int size)
     char *spi_send_data = NULL;
     int slen = size + SPI_SEND_LEN_FIELD;
     int ret = 0;
+    uint8_t prev_stat;  /* Save state before sending to avoid modification by ISR */
+    bool is_cipsend_cmd = false;   /* Flag to indicate if it's CIPSEND command */
+    bool is_cipsdfile_cmd = false; /* Flag to indicate if it's CIPSDFILE command */
 
     if (size == 0 || data == NULL || size > SPI_SEND_LEN_MAX) {
         return;
     }
+
+    AT_TRACE("E,s%d,d%d\r\n", spi_manager.stat, spi_manager.direction);
 
     /* 1. Prefix with spi header
         |----|----|----|----|----|
         |len3|len2|len1|len0|,   |
         |----|----|----|----|----|
     */
-    spi_send_data = (char *)sys_malloc(slen);
+    spi_send_data = (char *)sys_zalloc(slen);
     if (spi_send_data == NULL) {
         AT_TRACE("%s memory alloc fail\r\n", __func__);
         ret = -1;
@@ -1030,78 +1015,194 @@ void at_spi_send_with_handshake(char *data, int size)
     snprintf(spi_send_data, SPI_SEND_LEN_FIELD + 1, "%04d,", size);
     sys_memcpy(spi_send_data + SPI_SEND_LEN_FIELD, data, size);
 
-    // AT_TRACE_DATA("TX Data:", spi_send_data, slen);
-    /* 2. Update spi slave stat */
-    if (spi_manager.stat == SPI_Slave_AT_Recv)
-        spi_manager.stat = SPI_Slave_AT_ACK;
-    else if (spi_manager.stat == SPI_Slave_Data_Recv)
-        spi_manager.stat = SPI_Slave_Data_ACK;
-    else if (spi_manager.stat == SPI_Slave_File_Recv)
-        spi_manager.stat = SPI_Slave_File_ACK;
+    prev_stat = spi_manager.stat;
+    if (prev_stat == SPI_Slave_AT_Recv || prev_stat == SPI_Slave_AT_ACK) {
+        is_cipsend_cmd = (strncmp(at_hw_rx_buf, "AT+CIPSEND", 10) == 0);
+        is_cipsdfile_cmd = (strncmp(at_hw_rx_buf, "AT+CIPSDFILE", 12) == 0);
+    }
 
-    /* 3. Reconfig SPI using DMA TX */
+    if (spi_manager.stat == SPI_Slave_AT_Recv)
+        spi_manager_state_set(SPI_Slave_AT_ACK);
+    else if (spi_manager.stat == SPI_Slave_Data_Recv)
+        spi_manager_state_set(SPI_Slave_Data_ACK);
+    else if (spi_manager.stat == SPI_Slave_File_Recv)
+        spi_manager_state_set(SPI_Slave_File_ACK);
+    else if (spi_manager.stat == SPI_Slave_Idle) {
+        /* Sending error response from Idle state (after DMA timeout cleanup) */
+        spi_manager_state_set(SPI_Slave_AT_ACK);
+    }
+
+    spi_manager.rx_dma_done = 0;
+    spi_manager.tx_dma_done = 0;
+
+    /* Set TX direction before DMA config */
     spi_manager.direction = SPI_Slave_TX_Dir;
+
     spi_dma_config(false, 0, true, (uint32_t)&spi_send_data[0], slen, 0);
 
-    /* 4. Notify SPI Master that MISO is ready */
+    /* 3. toggle sync gpio high to notify master */
     spi_handshake_rising_trigger();
 
-    /* 5. Waiting DMA TX done */
+    AT_TRACE("aT,s%d,d%d\r\n", spi_manager.stat, spi_manager.direction);
+
+    /* 4. Waiting DMA TX done */
     ret = sys_sema_down(&at_hw_dma_sema, SPI_TRX_TIMEOUT);
     if (ret == OS_TIMEOUT) {
-        AT_TRACE("TX timeout tx_cnt=%d, stat=%d, dir=%d\r\n", slen - dma_transfer_number_get(DMA_CH3),
-                    spi_manager.stat, spi_manager.direction);
-        AT_TRACE_DATA("TX Data:", spi_send_data, 50);
+        uint32_t tx_remaining = dma_transfer_number_get(DMA_CH3);
+        uint32_t rx_remaining = dma_transfer_number_get(DMA_CH2);
+        uint32_t tx_sent = slen - tx_remaining;
+        uint32_t rx_count = slen - rx_remaining;
+
+        /* Check SPI hardware status */
+        uint32_t spi_stat = SPI_STAT;
+        uint32_t dma_ch2_cnt = DMA_CH2CNT;
+        uint32_t dma_ch3_cnt = DMA_CH3CNT;
+
+        AT_TRACE("[DMA_TX_TIMEOUT] tx:%d/%d, rx:%d/%d, stat=%d, dir=%d, flags:rx=%d,tx=%d\r\n",
+                    tx_sent, slen, rx_count, slen, spi_manager.stat, spi_manager.direction,
+                    spi_manager.rx_dma_done, spi_manager.tx_dma_done);
+        AT_TRACE("[HW_STATE] SPI_STAT=0x%x, DMA_CH2CNT=%d, DMA_CH3CNT=%d\r\n",
+                    spi_stat, dma_ch2_cnt, dma_ch3_cnt);
+        AT_TRACE_DATA("TX Data:", spi_send_data, ((tx_sent > 50) ? 50 : tx_sent));
+
+        /* CRITICAL: Stop DMA channels immediately */
+        dma_transfer_number_config(DMA_CH2, 0);
+        dma_transfer_number_config(DMA_CH3, 0);
+
+        dma_channel_disable(DMA_CH2);
+        dma_channel_disable(DMA_CH3);
+
+        /* Disable SPI DMA */
+        spi_dma_disable(SPI_DMA_RECEIVE);
+        spi_dma_disable(SPI_DMA_TRANSMIT);
+
+        /* Clear DMA interrupt flags */
+        dma_interrupt_flag_clear(DMA_CH2, DMA_INT_FLAG_FTF);
+        dma_interrupt_flag_clear(DMA_CH3, DMA_INT_FLAG_FTF);
+
+        spi_slave_init();
+        spi_enable();
+
+        rcu_periph_reset_enable(RCU_DMARST);
+        /* Additional delay to ensure FIFO is completely flushed after reset */
+        sys_ms_sleep(2);
+        rcu_periph_reset_disable(RCU_DMARST);
+
+        /* Manually drain RX FIFO to ensure no residual data */
+        volatile int flush_cnt = 0;
+        while ((RESET != spi_flag_get(SPI_FLAG_RBNE)) && (flush_cnt++ < 100)) {
+            (void)spi_data_receive();
+        }
+
+        /* Clear software DMA flags */
+        spi_manager.rx_dma_done = 0;
+        spi_manager.tx_dma_done = 0;
+
         ret = -2;
         goto Exit;
     }
 
-    /* 6 update spi_manager state */
-    AT_TRACE("send, s:%d, rx:%s, dir:%d\r\n", spi_manager.stat, at_hw_rx_buf, spi_manager.direction);
-    if (spi_manager.stat == SPI_Slave_AT_ACK && (strncmp(at_hw_rx_buf, "AT+CIPSEND", 10) == 0)) {
+    if ((prev_stat == SPI_Slave_AT_Recv || prev_stat == SPI_Slave_AT_ACK) &&
+        spi_manager.stat == SPI_Slave_AT_ACK) {
+
+        if (is_cipsend_cmd) {
+            spi_manager_state_set(SPI_Slave_Data_Recv);
+            at_cmd_received = 0;
+            sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
+        } else if (is_cipsdfile_cmd) {
+            spi_manager_state_set(SPI_Slave_File_Recv);
+            sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
+        } else {
+
+            sys_enter_critical();
+            if (spi_manager.stat == SPI_Slave_AT_ACK) {
+                spi_manager.rx_dma_done = 0;
+                spi_manager.tx_dma_done = 0;
+                spi_manager.direction = SPI_Slave_RX_Dir;
+                spi_manager_state_set(SPI_Slave_AT_Recv);
+                sys_exit_critical();
+                at_spi_rcv_atcmd_config(0);
+            } else {
+                AT_TRACE("Skip AT reconfig: stat=%d\r\n", spi_manager.stat);
+                sys_exit_critical();
+            }
+        }
+    } else if ((prev_stat == SPI_Slave_Data_Recv || prev_stat == SPI_Slave_Data_ACK) &&
+               spi_manager.stat == SPI_Slave_Data_ACK) {
+        sys_enter_critical();
+        if (spi_manager.stat == SPI_Slave_Data_ACK) {
+            spi_manager.rx_dma_done = 0;
+            spi_manager.tx_dma_done = 0;
+            spi_manager.direction = SPI_Slave_RX_Dir;
+            spi_manager_state_set(SPI_Slave_AT_Recv);
+            sys_exit_critical();
+            at_spi_rcv_atcmd_config(0);
+        } else {
+            AT_TRACE("Skip Data reconfig: stat=%d\r\n", spi_manager.stat);
+            sys_exit_critical();
+        }
+    } else if (prev_stat == SPI_Slave_File_Recv || prev_stat == SPI_Slave_File_ACK ||
+               prev_stat == SPI_Slave_File_Done) {
         at_cmd_received = 0;
-		spi_manager.stat = SPI_Slave_Data_Recv;
-        sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
-    } else if (spi_manager.stat == SPI_Slave_AT_ACK && (strncmp(at_hw_rx_buf, "AT+CIPSDFILE", 12) == 0)) {
-        spi_manager.stat = SPI_Slave_File_Recv;
-        sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
-    } else if (spi_manager.stat == SPI_Slave_File_ACK || spi_manager.stat == SPI_Slave_File_Recv ||
-            spi_manager.stat == SPI_Slave_File_Done) {
-        //TODO
-    } else if (spi_manager.stat != SPI_Slave_AT_Recv) {
-        AT_TRACE("send with handshake, stat=%d\r\n", spi_manager.stat);
+    } else if (prev_stat == SPI_Slave_Idle && spi_manager.stat == SPI_Slave_AT_ACK) {
+        sys_enter_critical();
+        if (spi_manager.stat == SPI_Slave_AT_ACK) {
+            spi_manager.rx_dma_done = 0;
+            spi_manager.tx_dma_done = 0;
+            spi_manager.direction = SPI_Slave_RX_Dir;
+            spi_manager_state_set(SPI_Slave_AT_Recv);
+            sys_exit_critical();
+            at_spi_rcv_atcmd_config(0);
+        } else {
+            AT_TRACE("Skip Idle reconfig: stat=%d\r\n", spi_manager.stat);
+            sys_exit_critical();
+        }
     }
 
 Exit:
-    /* 7. free send data */
     if (spi_send_data)
         sys_mfree(spi_send_data);
-
-    /* 8. back to atcmd recv mode */
     if (ret) {
-        spi_manager.stat = SPI_Slave_Idle;
+        AT_TRACE("stat:%d. back to atcmd rcv mode, ret=%d\r\n", spi_manager.stat, ret);
+        at_cmd_received = 0;
+        sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
+        spi_manager_state_set(SPI_Slave_Idle);
         at_spi_rcv_atcmd_config(0);
     }
 }
 
 void at_spi_rcv_atcmd_config(bool from_isr)
 {
-    uint32_t dma_channel;
+    if ((spi_manager.stat == SPI_Slave_Data_Recv || spi_manager.stat == SPI_Slave_AT_Recv)
+        && at_cmd_received == 1) {
+        AT_TRACE("Ir ah,seq%d,s%d\r\n", at_cmd_received, spi_manager.stat);
+    }
 
-    if (spi_manager.stat == SPI_Slave_Data_Recv ||
-                spi_manager.stat == SPI_Slave_AT_Recv)
-        AT_TRACE("Error, disorder seq %d, %s, stat %d\r\n",
-                at_cmd_received, at_hw_rx_buf, spi_manager.stat);
-
+    /* 1. Reset receive buffer and flags */
     sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
     at_hw_rx_buf_idx = 0;
     at_cmd_received = 0;
 
-    /* 1. Reconfig SPI using DMA RX */
-    spi_manager.direction = SPI_Slave_RX_Dir;
+    /* 2. Set direction and state BEFORE configuring DMA (if not already set by caller) */
+    if (spi_manager.direction != SPI_Slave_RX_Dir) {
+        spi_manager.direction = SPI_Slave_RX_Dir;
+    }
+    if (spi_manager.stat != SPI_Slave_AT_Recv) {
+        spi_manager_state_set(SPI_Slave_AT_Recv);
+    }
+
+    /* 3. Config and start DMA (spi_dma_config will disable channels, clear flags, then enable) */
     spi_dma_config(true, (uint32_t)at_hw_rx_buf, false, 0, ATCMD_FIXED_LEN, from_isr);
 
-    spi_manager.stat = SPI_Slave_AT_Recv;
+    /* CRITICAL: Small delay to ensure DMA hardware is fully ready */
+    if (from_isr == 0) {
+        sys_us_delay(5);
+    }
+
+#ifdef CONFIG_SPI_3_WIRED
+    /* 4. Notify master that slave is ready (after DMA fully started) */
+    spi_nss_rising_trigger(from_isr);
+#endif
 }
 
 /*!
@@ -1119,11 +1220,12 @@ void at_spi_init(void)
     at_cmd_received = 0;
 
     spi_enable();
-
     at_spi_rcv_atcmd_config(0);
 
     spi_handshake_gpio_config();
-
+#ifdef CONFIG_SPI_3_WIRED
+    spi_nss_gpio_config();
+#endif
     AT_TRACE("AT SPI Slave Initialized\r\n");
 }
 
@@ -1135,27 +1237,44 @@ void at_spi_deinit(void)
 
 static void at_spi_reconfig_from_isr(void)
 {
+    if (spi_manager.direction == SPI_Slave_RX_Dir) {
+        if (spi_manager.rx_dma_done == 0)
+            return;
+    } else {
+        if (spi_manager.rx_dma_done == 0 || spi_manager.tx_dma_done == 0)
+            return;
+    }
 
-    if (spi_manager.rx_dma_done == 0 || spi_manager.tx_dma_done == 0)
-        return;
+    AT_TRACE("Is%d,d%d,r%d,t%d\r\n", spi_manager.stat, spi_manager.direction, spi_manager.rx_dma_done, spi_manager.tx_dma_done);
 
-    AT_TRACE("rx dma irq is raised,%d, %d, %s\r\n", spi_manager.stat, spi_manager.direction, at_hw_rx_buf);
-    spi_manager.tx_dma_done = 0;
-    spi_manager.rx_dma_done = 0;
+    if (spi_manager.direction == SPI_Slave_TX_Dir && spi_manager.tx_dma_done == 1) {
+        spi_manager.rx_dma_done = 0;  /* Clear first, before any processing */
+    }
 
     if (spi_manager.direction == SPI_Slave_RX_Dir) {
+        spi_manager.tx_dma_done = 0;
+        spi_manager.rx_dma_done = 0;
+
         if (SPI_Slave_Data_Recv == spi_manager.stat || SPI_Slave_File_Recv == spi_manager.stat) {
-            sys_sema_up_from_isr(&at_hw_dma_sema);
+            uint32_t rx_remaining = dma_transfer_number_get(DMA_CH2);
+            if (rx_remaining == 0) {
+                AT_TRACE("I,rs,s%d\r\n", spi_manager.stat);
+                sys_sema_up_from_isr(&at_hw_dma_sema);
+            } else {
+                AT_TRACE("I,rs_partial,s%d,remain=%d\r\n", spi_manager.stat, rx_remaining);
+            }
             goto exit;
         }
-
-        if (SPI_Slave_Data_Recv != spi_manager.stat) {
-            if (spi_manager.stat == SPI_Slave_AT_Recv)
-                spi_manager.stat = SPI_Slave_AT_ACK;
+        if (spi_manager.stat == SPI_Slave_AT_Recv) {
+            AT_TRACE("I,NR,s%d,cr%d\r\n", spi_manager.stat, at_cmd_received);
+            spi_manager_state_set(SPI_Slave_AT_ACK);
             at_cmd_received = 1;
             goto exit;
         }
     } else if (spi_manager.direction == SPI_Slave_TX_Dir) {
+        spi_manager.tx_dma_done = 0;
+
+        AT_TRACE("iTX r s%d\r\n", spi_manager.stat);
         sys_sema_up_from_isr(&at_hw_dma_sema);
 
         if ((spi_manager.stat == SPI_Slave_File_ACK) ||
@@ -1164,128 +1283,130 @@ static void at_spi_reconfig_from_isr(void)
         } else if ((spi_manager.stat == SPI_Slave_AT_ACK) && (strncmp(at_hw_rx_buf, "AT+CIPSEND", 10) == 0)) {
             goto exit;
         }
-
-        if ((spi_manager.stat == SPI_Slave_Data_ACK) || (spi_manager.stat == SPI_Slave_File_Done) ||
-                (spi_manager.stat == SPI_Slave_AT_ACK)) {
-
+        if (spi_manager.stat == SPI_Slave_File_Done) {
+            dma_interrupt_flag_clear(SPI_RX_DMA_CH, DMA_INT_FLAG_FTF);
             at_spi_rcv_atcmd_config(1);
+        } else if (spi_manager.stat == SPI_Slave_AT_ACK || spi_manager.stat == SPI_Slave_Data_ACK) {
+            dma_interrupt_flag_clear(SPI_RX_DMA_CH, DMA_INT_FLAG_FTF);
         }
     }
-
 exit:
-
     return;
 }
 
-#if 1
-
 void at_spi_tx_dma_irq_hdl(uint32_t dma_channel)
 {
-    AT_TRACE("Tx irq raised\r\n");
     if (RESET != dma_interrupt_flag_get(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF);
-        spi_manager.tx_dma_done = 1;
+        /* CRITICAL: Verify transfer is really complete before setting flag */
+        uint32_t remaining = dma_transfer_number_get(SPI_TX_DMA_CH);
+        if (remaining == 0) {
+            spi_manager.tx_dma_done = 1;
+        } else {
+            AT_TRACE("[TX_ISR_GHOST] FTF triggered but %d bytes remaining\r\n", remaining);
+        }
     }
-
     at_spi_reconfig_from_isr();
 }
 
 void at_spi_rx_dma_irq_hdl(uint32_t dma_channel)
 {
-    AT_TRACE("Rx irq raised\r\n");
     if (RESET != dma_interrupt_flag_get(SPI_RX_DMA_CH, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(SPI_RX_DMA_CH, DMA_INT_FLAG_FTF);
-        spi_manager.rx_dma_done = 1;
+        /* CRITICAL: Verify transfer is really complete before setting flag */
+        uint32_t remaining = dma_transfer_number_get(SPI_RX_DMA_CH);
+        if (remaining == 0) {
+            spi_manager.rx_dma_done = 1;
+        } else {
+            AT_TRACE("[RX_ISR_GHOST] FTF triggered but %d bytes remaining\r\n", remaining);
+        }
     }
-
     at_spi_reconfig_from_isr();
 }
 
-#else
-void at_spi_tx_dma_irq_hdl(uint32_t dma_channel)
-{
-    if (RESET != dma_interrupt_flag_get(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF)) {
-        dma_interrupt_flag_clear(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF);
-    }
-}
-
-void at_spi_rx_dma_irq_hdl(uint32_t dma_channel)
-{
-    // Waiting TX done
-    while (RESET == dma_interrupt_flag_get(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF));
-
-    dma_interrupt_flag_clear(SPI_TX_DMA_CH, DMA_INT_FLAG_FTF);
-
-    if (RESET != dma_interrupt_flag_get(dma_channel, DMA_INT_FLAG_FTF)) {
-        dma_interrupt_flag_clear(dma_channel, DMA_INT_FLAG_FTF);
-
-        printf("rx dma irq is raised,%d, %d, %s\r\n", spi_manager.stat, spi_manager.direction, at_hw_rx_buf);
-
-        if (spi_manager.direction == SPI_Slave_RX_Dir) {
-            if (SPI_Slave_Data_Recv == spi_manager.stat || SPI_Slave_File_Recv == spi_manager.stat) {
-                sys_sema_up_from_isr(&at_hw_dma_sema);
-                goto exit;
-            }
-
-            if (SPI_Slave_Data_Recv != spi_manager.stat) {
-                at_cmd_received = 1;
-                goto exit;
-            }
-        } else if (spi_manager.direction == SPI_Slave_TX_Dir) {
-            sys_sema_up_from_isr(&at_hw_dma_sema);
-
-            if (spi_manager.stat == SPI_Slave_File_ACK ||
-                (spi_manager.stat == SPI_Slave_AT_ACK && (strncmp(at_hw_rx_buf, "AT+CIPSDFILE", 12) == 0))) {
-                    goto exit;
-            } else if (spi_manager.stat == SPI_Slave_AT_ACK && (strncmp(at_hw_rx_buf, "AT+CIPSEND", 10) == 0)) {
-                goto exit;
-            }
-
-
-            if ((spi_manager.stat == SPI_Slave_Data_ACK) || (spi_manager.stat == SPI_Slave_File_Done) ||
-                spi_manager.stat == SPI_Slave_AT_ACK) {
-
-//            if ((spi_manager.stat == SPI_Slave_Data_ACK) || (spi_manager.stat == SPI_Slave_File_Done) ||
-//                    (spi_manager.stat == SPI_Slave_AT_ACK && strncmp(at_hw_rx_buf, "AT+CIPSEND", 10))) {
-
-                at_spi_rcv_atcmd_config(1);
-            }
-
-        }
-    }
-exit:
-    return;
-}
-#endif
-
-static void at_spi_dma_receive(uint32_t address, uint32_t num)
+static int at_spi_dma_receive(uint32_t address, uint32_t num)
 {
     int ret = OS_OK;
 
     /* 1. update spi manager dir */
+    AT_TRACE("E:s%d,d%d,num=%d\r\n", spi_manager.stat, spi_manager.direction, num);
     spi_manager.direction = SPI_Slave_RX_Dir;
 
-    /* 2. Reconfig SPI using DMA Rx */
     spi_dma_config(true, address, false, 0, num, 0);
 
     /* 3. Notify Master using a pulse */
     spi_handshake_rising_trigger();
 
     /* 4. Waiting RX Done */
+    AT_TRACE("W:s%d,d%d\r\n", spi_manager.stat, spi_manager.direction);
     ret = sys_sema_down(&at_hw_dma_sema, SPI_TRX_TIMEOUT);
     if (ret == OS_TIMEOUT) {
-        AT_TRACE("receive timeout, rx_cnt=%d\r\n", num - dma_transfer_number_get(DMA_CH2));
+        uint32_t rx_remaining = dma_transfer_number_get(DMA_CH2);
+        uint32_t tx_remaining = dma_transfer_number_get(DMA_CH3);
+        uint32_t rx_received = num - rx_remaining;
+        uint32_t tx_sent = num - tx_remaining;
+
+        /* Check SPI hardware status */
+        uint32_t spi_stat = SPI_STAT;
+        uint32_t dma_ch2_cnt = DMA_CH2CNT;
+        uint32_t dma_ch3_cnt = DMA_CH3CNT;
+
+        AT_TRACE("[DMA_RX_TIMEOUT] rx:%d/%d, tx:%d/%d, stat=%d, dir=%d, flags:rx=%d,tx=%d\r\n",
+                 rx_received, num, tx_sent, num, spi_manager.stat, spi_manager.direction,
+                 spi_manager.rx_dma_done, spi_manager.tx_dma_done);
+        AT_TRACE("[HW_STATE] SPI_STAT=0x%x, DMA_CH2CNT=%d, DMA_CH3CNT=%d\r\n",
+                    spi_stat, dma_ch2_cnt, dma_ch3_cnt);
+
+        if (rx_received < num) {
+            AT_TRACE("!!! Master only provided %d SPI clocks (expected %d) during data send\r\n",
+                        rx_received, num);
+            AT_TRACE("!!! Check Master: spi_send(buf, header(5) + data_len)\r\n");
+        }
+
+        AT_TRACE_DATA("RX Data:", (char*)address, ((rx_received > 50) ? 50 : rx_received));
+
+        dma_transfer_number_config(DMA_CH2, 0);
+        dma_transfer_number_config(DMA_CH3, 0);
+
+        dma_channel_disable(DMA_CH2);
+        dma_channel_disable(DMA_CH3);
+
+        spi_dma_disable(SPI_DMA_RECEIVE);
+        spi_dma_disable(SPI_DMA_TRANSMIT);
+
+        dma_interrupt_flag_clear(DMA_CH2, DMA_INT_FLAG_FTF);
+        dma_interrupt_flag_clear(DMA_CH3, DMA_INT_FLAG_FTF);
+
+        spi_slave_init();
+        spi_enable();
+
+        rcu_periph_reset_enable(RCU_DMARST);
+        /* Additional delay to ensure FIFO is completely flushed after reset */
+        sys_ms_sleep(2);
+        rcu_periph_reset_disable(RCU_DMARST);
+
+        volatile int flush_cnt = 0;
+        while ((RESET != spi_flag_get(SPI_FLAG_RBNE)) && (flush_cnt++ < 100)) {
+            (void)spi_data_receive();
+        }
+
+        /* Clear software DMA flags */
+        spi_manager.rx_dma_done = 0;
+        spi_manager.tx_dma_done = 0;
+
         ret = -2;
         goto exit;
     }
+    AT_TRACE("g.s%d\r\n", spi_manager.stat);
 
 exit:
-    /* 5. back to atcmd recv if error occurs */
-    if (ret) { //back to atcmd rcv
-        AT_TRACE("back to atcmdrcv, stat=%d\r\n", spi_manager.stat);
-        spi_manager.stat = SPI_Slave_Idle;
-        at_spi_rcv_atcmd_config(0);
+    if (ret) {
+        AT_TRACE("[DMA_RX_ERR] clean state, stat=%d, ret=%d\r\n", spi_manager.stat, ret);
+        at_cmd_received = 0;
+        sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
+        spi_manager_state_set(SPI_Slave_Idle);
     }
+    return ret;
 }
 
 static void at_spi_dma_receive_config(void)
@@ -1603,12 +1724,13 @@ static void at_hw_send(char *data, int size)
 #endif
 }
 
-static void at_hw_dma_receive(uint32_t address, uint32_t num)
+int at_hw_dma_receive(uint32_t address, uint32_t num)
 {
 #ifdef CONFIG_ATCMD_SPI
-    at_spi_dma_receive(address, num);
+    return at_spi_dma_receive(address, num);
 #else
     at_uart_dma_receive(address, num);
+    return 0;
 #endif
 }
 
@@ -1769,6 +1891,11 @@ static void atcmd_task(void *param)
 {
     int argc = 0, i = 0;
     char *argv[AT_MAX_ARGC];
+    /* Copy command to local buffer BEFORE processing,
+    * because ISR may overwrite at_hw_rx_buf during command execution! */
+#ifdef CONFIG_ATCMD_SPI
+    char cmd_backup[ATCMD_FIXED_LEN];
+#endif
 
 #ifdef CFG_WLAN_SUPPORT
     wifi_wait_ready();
@@ -1794,16 +1921,24 @@ static void atcmd_task(void *param)
         if (spi_manager.stat != SPI_Slave_AT_ACK) {
             at_cmd_received = 0;
             AT_TRACE("Unexpected, %s, spi_manager->stat=%d\r\n", at_hw_rx_buf, spi_manager.stat);
+            /* Clear buffer to prevent processing stale command */
+            sys_memset(at_hw_rx_buf, 0, ATCMD_FIXED_LEN);
             at_spi_rcv_atcmd_config(0);
             goto cont;
        }
+
+        sys_memcpy(cmd_backup, at_hw_rx_buf, ATCMD_FIXED_LEN);
 #endif
 
         if (at_hw_rx_buf[0] == '\0') {
             at_cmd_received = 0;
             goto cont;
         } else {
+#ifdef CONFIG_ATCMD_SPI
+            argc = atcmd_parse(cmd_backup, argv);
+#else
             argc = atcmd_parse(at_hw_rx_buf, argv);
+#endif
             if (argc == 0)
                 goto cont;
         }
@@ -1820,7 +1955,11 @@ static void atcmd_task(void *param)
         }
 
         if (i == AT_CMD_TABLE_SZ - 1) {//not found
+#ifdef CONFIG_ATCMD_SPI
+            AT_TRACE("Invalid atcmd, %s\r\n", cmd_backup);
+#else
             AT_TRACE("Invalid atcmd, %s\r\n", at_hw_rx_buf);
+#endif
             AT_RSP_DIRECT("ERROR\r\n", 7);
         }
 cont:
@@ -1834,6 +1973,33 @@ cont:
 
     sys_task_delete(NULL);
 }
+
+static void atcmd_spi_task(void *param)
+{
+#ifdef CONFIG_ATCMD_SPI
+    for (;;) {
+        /* Check exit condition */
+        if (at_task_exit == 1)
+            break;
+
+        sys_enter_critical();
+        if (!list_is_empty(&cip_info.recv_data_list) && at_spi_hw_is_idle()
+            && cip_info.triger_count == 0 && spi_manager.stat == SPI_Slave_AT_Recv) {
+            /* Only trigger if we're in stable AT_Recv state, not just after TX */
+            spi_handshake_rising_trigger();
+            cip_info.triger_count++;
+            AT_TRACE("Tri\r\n");
+        }
+        sys_exit_critical();
+
+        /* Sleep to reduce CPU usage and allow other tasks to run */
+        sys_ms_sleep(10);
+    }
+#endif
+
+    sys_task_delete(NULL);
+}
+
 
 int atcmd_init(void)
 {
@@ -1869,6 +2035,11 @@ int atcmd_init(void)
     if (sys_task_create_dynamic((const uint8_t *)"ATCMD",
             ATCMD_STACK_SIZE, ATCMD_PRIORITY, atcmd_task, NULL) == NULL) {
         ret = -5;
+    }
+
+    if (sys_task_create_dynamic((const uint8_t *)"ATCMD_SPI",
+            128, OS_TASK_PRIORITY(1), atcmd_spi_task, NULL) == NULL) {
+        ret = -6;
     }
 
 Exit:

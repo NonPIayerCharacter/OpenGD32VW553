@@ -153,12 +153,11 @@ void at_cw_ap_list(int argc, char **argv)
     int idx;
 
     AT_RSP_START(2048);
-    if (argc > 2 || argc < 1)
-    {
+    if (argc > 2 || argc < 1) {
         goto Error;
     }
-    if (argc == 2)
-    {
+
+    if (argc == 2) {
         if (argv[1][0] == AT_QUESTION) {
             goto Usage;
         } else {
@@ -180,6 +179,7 @@ void at_cw_ap_list(int argc, char **argv)
         AT_TRACE("alloc results failed\r\n");
         goto Error;
     }
+
     out = sys_zalloc(256);
     if (NULL == out) {
         AT_TRACE("alloc out failed\r\n");
@@ -438,6 +438,127 @@ Error:
     return;
 Usage:
     AT_RSP("+CWSAP_CUR=<ssid>,<pwd>,<chl:1-13>,<hidden:0-1>\r\n");
+    AT_RSP_OK();
+    return;
+}
+
+/*!
+    \brief      the AT command set softAP IPv4 address
+    \param[in]  argc: number of parameters
+    \param[in]  argv: the pointer to the array that holds the parameters
+    \param[out] none
+    \retval     none
+*/
+void at_cip_ap(int argc, char **argv)
+{
+    int vif_idx = WIFI_VIF_INDEX_DEFAULT;
+    struct wifi_vif_tag *wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(vif_idx);
+    struct wifi_ip_addr_cfg ip_cfg;
+
+    AT_RSP_START(256);
+    if (argc == 1) {
+        if (argv[0][strlen(argv[0]) - 1] == AT_QUESTION) {
+#ifdef CFG_WIFI_CONCURRENT
+            if (wifi_management_concurrent_get()) {
+                vif_idx = WIFI_VIF_INDEX_SOFTAP_MODE;
+                wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(vif_idx);
+            }
+#endif
+            if (wvif->wvif_type == WVIF_AP) {
+                if (!wifi_get_vif_ip(vif_idx, &ip_cfg)) {
+                    AT_RSP("+CIPAP:ip:\""IP_FMT"\"\r\n", IP_ARG(ip_cfg.ipv4.addr));
+                    AT_RSP("+CIPAP:gateway:\""IP_FMT"\"\r\n", IP_ARG(ip_cfg.ipv4.gw));
+                    AT_RSP("+CIPAP:netmask:\""IP_FMT"\"\r\n", IP_ARG(ip_cfg.ipv4.mask));
+#ifdef CONFIG_IPV6_SUPPORT
+                    char ip6_local[IPV6_ADDR_STRING_LENGTH_MAX] = {0};
+                    char ip6_unique[IPV6_ADDR_STRING_LENGTH_MAX] = {0};
+                    if (!wifi_get_vif_ip6(vif_idx, ip6_local, ip6_unique)) {
+                        AT_RSP("+CIPAP:ip6ll:\"%s\"\r\n", ip6_local);
+                    } else {
+                        goto Error;
+                    }
+#endif
+                } else {
+                    AT_TRACE("get ip error.\r\n");
+                    goto Error;
+                }
+            } else {
+                AT_TRACE("please start softap.\r\n");
+                goto Error;
+            }
+        } else {
+            goto Error;
+        }
+    } else if (argc >= 2 && argc <= 4) {
+        char *ap_ip = NULL, *ap_gw = NULL, *ap_mask = NULL;
+        if (argv[1][0] == AT_QUESTION) {
+            goto Usage;
+        } else {
+            ap_ip = at_string_parse(argv[1]);
+            if (ap_ip == NULL) {
+                goto Error;
+            }
+            if (argc >= 3) {
+                ap_gw = at_string_parse(argv[2]);
+                if (ap_gw == NULL) {
+                    goto Error;
+                }
+            }
+            if (argc == 4) {
+                ap_mask = at_string_parse(argv[3]);
+                if (ap_mask == NULL) {
+                    goto Error;
+                }
+            }
+#ifdef CFG_WIFI_CONCURRENT
+            if (wifi_management_concurrent_get()) {
+                vif_idx = WIFI_VIF_INDEX_SOFTAP_MODE;
+                wvif = (struct wifi_vif_tag *)vif_idx_to_wvif(vif_idx);
+            }
+#endif
+            if (wvif->wvif_type == WVIF_AP) {
+                ip_cfg.mode = IP_ADDR_DHCP_SERVER;
+                if (cli_parse_ip4(ap_ip, &ip_cfg.ipv4.addr, NULL) != 0) {
+                    goto Error;
+                }
+
+                if (ap_gw == NULL) {
+                    sys_memcpy(&ip_cfg.ipv4.gw, &ip_cfg.ipv4.addr, sizeof(ip_cfg.ipv4.gw));
+                } else {
+                    if (cli_parse_ip4(ap_gw, &ip_cfg.ipv4.gw, NULL) != 0) {
+                        goto Error;
+                    }
+                }
+
+                if (ap_mask == NULL) {
+                    ip_cfg.ipv4.mask = PP_HTONL(0xFFFFFF00UL);
+                } else {
+                    if (cli_parse_ip4(ap_mask, &ip_cfg.ipv4.mask, NULL) != 0) {
+                        goto Error;
+                    }
+                }
+
+                if (wifi_set_vif_ip(vif_idx, &ip_cfg)) {
+                    AT_TRACE("failed to set softap ip.\r\n");
+                    goto Error;
+                }
+            } else {
+                AT_TRACE("please start softap.\r\n");
+                goto Error;
+            }
+        }
+    } else {
+        goto Error;
+    }
+
+    AT_RSP_OK();
+    return;
+
+Error:
+    AT_RSP_ERR();
+    return;
+Usage:
+    AT_RSP("+CIPAP=<\"ip\">[,<\"gateway\">,<\"netmask\">]\r\n");
     AT_RSP_OK();
     return;
 }

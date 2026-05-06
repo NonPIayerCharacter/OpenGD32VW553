@@ -94,7 +94,9 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
     BYTE *work = NULL;
 
 #ifdef USE_QSPI_FLASH
-    qspi_flash_api_init();
+    if (!qspi_flash_api_init()) {
+        return false;
+    }
     sys_mutex_init(&fs_mutex);
 #endif
 
@@ -111,6 +113,7 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
     if (wl_flash_config(&wl_config_global)) {
 #ifdef USE_QSPI_FLASH
         sys_mutex_free(&fs_mutex);
+        fs_mutex = NULL;
 #endif
         return false;
     }
@@ -120,6 +123,7 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
     if (fs == NULL) {
 #ifdef USE_QSPI_FLASH
         sys_mutex_free(&fs_mutex);
+        fs_mutex = NULL;
 #endif
         return false;
     }
@@ -133,8 +137,10 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
     work = (BYTE *)sys_malloc(FF_MAX_SS);
     if (work == NULL) {
         sys_mfree(fs);
+        fs = NULL;
 #ifdef USE_QSPI_FLASH
         sys_mutex_free(&fs_mutex);
+        fs_mutex = NULL;
 #endif
         return false;
     }
@@ -144,9 +150,11 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
         app_print("FATFS: mkfs failed\r\n");
         fresult_analyse(res);
         sys_mfree(fs);
+        fs = NULL;
         sys_mfree(work);
 #ifdef USE_QSPI_FLASH
         sys_mutex_free(&fs_mutex);
+        fs_mutex = NULL;
 #endif
         return false;
     }
@@ -159,8 +167,10 @@ bool fatfs_mk_mount(const MKFS_PARM* opt)
         return true;
     }
     sys_mfree(fs); /* if mount succeed, do not free fs */
+    fs = NULL;
 #ifdef USE_QSPI_FLASH
     sys_mutex_free(&fs_mutex);
+    fs_mutex = NULL;
 #endif
     return false;
 }
@@ -181,10 +191,12 @@ bool fatfs_unmount(void)
             sys_mfree(fs);
             fs = NULL;
         }
+#ifdef FATFS_USE_WL
         if (wl_config_global.temp_buff) {
             sys_mfree(wl_config_global.temp_buff);
             wl_config_global.temp_buff = NULL;
         }
+#endif
 #ifdef USE_QSPI_FLASH
         if (fs_mutex) {
             sys_mutex_free(&fs_mutex);
@@ -744,7 +756,7 @@ extern int at_scan_dir(char* path);
     \param[out] none
     \retval     FRESULT: fatfs operation results
 */
-int fatfs_show(char *path, uint8_t root_path)
+int fatfs_show(char *path, uint8_t root_path, bool at_stdout)
 {
     int res = FR_OK;
     char path_buffer[MAX_FILE_PATH + 2] = {0};
@@ -754,10 +766,11 @@ int fatfs_show(char *path, uint8_t root_path)
     } else {
         strncpy((char *)path_buffer, path, MAX_FILE_PATH);
     }
-#ifndef CONFIG_ATCMD
-    res = scan_dir((char *)path_buffer);
-#else
-    res = at_scan_dir((char *)path_buffer);
+    if (!at_stdout)
+        res = scan_dir((char *)path_buffer);
+#ifdef CONFIG_ATCMD
+    else
+        res = at_scan_dir((char *)path_buffer);
 #endif
     return res;
 }
@@ -839,11 +852,11 @@ uint32_t cmd_fatfs_exec(int argc, char **argv)
         }
     } else if (strcmp(argv[1], "show") == 0) {
         if (argc == 2) {
-            res = fatfs_show(NULL, 1);
+            res = fatfs_show(NULL, 1, false);
             fresult_analyse(res);
             return 0;
         } else if (argc == 3) {
-            res = fatfs_show(argv[2], 0);
+            res = fatfs_show(argv[2], 0, false);
             fresult_analyse(res);
             return 0;
         }
@@ -1049,6 +1062,49 @@ int fs_flash_read(LBA_t sector, BYTE *buff, UINT count)
 #endif
     return RES_OK;
 }
+
+/*!
+    \brief      erase flash
+    \param[in]  sector:	Start sector in LBA
+    \param[in]  count: Number of sectors to erase
+    \retval     result: 0 for success, -1 for fail
+*/
+int fs_flash_erase(LBA_t sector, UINT count)
+{
+#ifdef FATFS_USE_WL
+    if ((sector * FATFS_SECTOR_SIZE) > wl_config_global.flash_size) {
+        app_print("FATFS_ERROR: erase out of range\r\n");
+        return RES_ERROR;
+    }
+
+    if (wl_flash_erase_range(&wl_config_global, (sector * FATFS_SECTOR_SIZE), (count * FATFS_SECTOR_SIZE)))
+        return RES_ERROR;
+#else
+    if ((sector * FATFS_SECTOR_SIZE) > FATFS_FLASH_TOTAL_SIZE) {
+        app_print("FATFS_ERROR: erase out of range\r\n");
+        return RES_ERROR;
+    }
+#ifdef USE_QSPI_FLASH
+    if (sys_mutex_try_get(&fs_mutex, 60000) != OS_OK) {
+        app_print("FATFS_ERROR: write can't get mutex in one minute\r\n");
+        return RES_ERROR;
+    }
+
+    if (qspi_flash_erase((sector * FATFS_SECTOR_SIZE), (count * FATFS_SECTOR_SIZE))) {
+        sys_mutex_put(&fs_mutex);
+        return RES_ERROR;
+    }
+
+    sys_mutex_put(&fs_mutex);
+#else
+    if (raw_flash_erase((sector * FATFS_SECTOR_SIZE + FATFS_FLASH_START_ADDR), (count * FATFS_SECTOR_SIZE)))
+        return RES_ERROR;
+#endif
+#endif
+
+    return RES_OK;
+}
+
 
 uint32_t fs_flash_size(void)
 {

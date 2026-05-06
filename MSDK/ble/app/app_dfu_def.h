@@ -45,7 +45,7 @@ OF SUCH DAMAGE.
 #endif
 
 #define FEAT_VALIDATE_FW_SUPPORT      1
-#define FEAT_CRC_SUPPORT              0
+#define FEAT_CRC_SUPPORT              1
 
 #define CMD_MAX_LEN             128
 #define SHA256_RESULT_SIZE      32

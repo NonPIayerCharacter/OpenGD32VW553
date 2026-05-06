@@ -46,6 +46,8 @@ OF SUCH DAMAGE.
 #include "dbg_print.h"
 #include "wrapper_os.h"
 
+#define APP_SEC_INVALID_PIN_CODE            (1000000)       /* pin code should between 000000 ~ 999999 */
+
 /* BLE bond state */
 typedef enum
 {
@@ -73,6 +75,7 @@ typedef struct
     uint8_t key_size;                   /*!< LTK Key Size */
     bool                oob;            /*!< Is support OOB information */
     ble_gap_oob_data_t  oob_data;       /*!< OOB information */
+    uint32_t pin_code;
 } app_sec_env_t;
 
 /* Application security manager module data */
@@ -83,6 +86,8 @@ static pairing_cb_t pairing_cb;
 
 /* Security key managered by APP */
 static bool app_sec_mgr_key = false;
+
+static app_sec_callbacks app_sec_cb;
 
 /*!
     \brief      Callback function to handle @ref BLE_SEC_EVT_PAIRING_REQ_IND event
@@ -210,6 +215,10 @@ static void app_key_display_req_hdlr(ble_gap_tk_req_ind_t *p_ind)
         return;
     }
 
+    if ((app_sec_env.pin_code != APP_SEC_INVALID_PIN_CODE) && (app_sec_env.pin_code <= 999999)) {
+        pin_code = app_sec_env.pin_code;
+    }
+
     dbg_print(NOTICE, "pin code %d\r\n", pin_code);
 
     ble_sec_key_display_enter_cfm(p_ind->conn_idx, true, pin_code);
@@ -233,6 +242,10 @@ static void app_key_enter_req_hdlr(ble_gap_tk_req_ind_t *p_ind)
     }
 
     dbg_print(NOTICE, "conn_idx %u waiting for user to input key ......\r\n", p_ind->conn_idx);
+
+    if (app_sec_cb.input_key_req) {
+        app_sec_cb.input_key_req(p_ind->conn_idx);
+    }
 }
 
 /*!
@@ -272,6 +285,10 @@ static void app_nc_hdlr(ble_gap_nc_ind_t *p_ind)
 
     dbg_print(NOTICE, "conn_idx %u num val: %d\r\n", p_ind->conn_idx, p_ind->numeric_value);
     dbg_print(NOTICE, "waiting for user to compare......\r\n");
+
+    if (app_sec_cb.key_cfm_req) {
+        app_sec_cb.key_cfm_req(p_ind->conn_idx, p_ind->numeric_value);
+    }
 }
 
 /*!
@@ -445,6 +462,10 @@ static void app_pairing_success_hdlr(ble_sec_pairing_success_t *p_info)
         memset(&pairing_cb.addr, 0, sizeof(ble_gap_addr_t));
         pairing_cb.state = BLE_BOND_STATE_NONE;
     }
+
+    if (app_sec_cb.authen_cmpl) {
+        app_sec_cb.authen_cmpl(p_info->conidx, BLE_ERR_NO_ERROR);
+    }
 }
 
 /*!
@@ -468,6 +489,10 @@ static void app_pairing_fail_hdlr(ble_sec_pairing_fail_t *p_info)
     }
 
     dbg_print(NOTICE, "pairing fail reason 0x%x\r\n", p_info->param.reason);
+
+    if (app_sec_cb.authen_cmpl) {
+        app_sec_cb.authen_cmpl(p_info->param.conn_idx, p_info->param.reason);
+    }
 }
 
 /*!
@@ -679,7 +704,9 @@ void app_sec_mgr_reset(void)
     app_sec_env.authen_bond = true;
     app_sec_env.key_size = 16;
     app_sec_env.io_capability = BLE_GAP_IO_CAP_NO_IO;
+    app_sec_env.pin_code = APP_SEC_INVALID_PIN_CODE;
     memset(&pairing_cb, 0, sizeof(pairing_cb));
+    memset(&app_sec_cb, 0 , sizeof(app_sec_cb));
 }
 
 /*!
@@ -1033,4 +1060,28 @@ bool app_sec_user_key_mgr_get(void)
 {
     return app_sec_mgr_key;
 }
+
+bool app_sec_pin_code_set(uint32_t pin_code)
+{
+    if (pin_code <= 999999) {
+        app_sec_env.pin_code = pin_code;
+        return true;
+    }
+
+    return false;
+}
+
+uint32_t app_sec_pin_code_get(void)
+{
+    return app_sec_env.pin_code;
+}
+
+bool app_sec_callbacks_set(app_sec_callbacks cb)
+{
+    app_sec_cb = cb;
+
+    return true;
+}
+
+
 #endif //(BLE_APP_SUPPORT && (BLE_CFG_ROLE & (BLE_CFG_ROLE_PERIPHERAL | BLE_CFG_ROLE_CENTRAL)))

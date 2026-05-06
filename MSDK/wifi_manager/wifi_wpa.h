@@ -743,6 +743,7 @@ uint8_t wifi_wpa_ap_cfg_dtim_period_get(struct wpas_ap *w_ap);
 uint8_t wifi_wpa_ap_cfg_bcn_interval_get(struct wpas_ap *w_ap);
 uint8_t wifi_wpa_ap_cfg_hidden_get(struct wpas_ap *w_ap);
 uint32_t wifi_wpa_ap_cfg_akm_get(struct wpas_ap *w_ap);
+uint8_t wifi_wpa_ap_cfg_max_conn_get(struct wpas_ap *w_ap);
 int wifi_wpa_send_connect_fail_event(int vif_idx);
 int wifi_wpa_send_rx_mgmt_done_event(int vif_idx, uint8_t *param, uint32_t param_len);
 int wifi_wpa_send_disconnect_event(int vif_idx, uint8_t *param, uint32_t param_len);

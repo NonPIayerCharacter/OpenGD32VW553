@@ -138,14 +138,7 @@ enum {
     SYS_MAX_ROM_TYPE = 0xF,
 
     /* Defined by Application */
-    SYS_AUTO_CONN,
-    SYS_SSID_1,
-    SYS_SSID_2,
-    SYS_PASSWD_1,
-    SYS_PASSWD_2,
-    SYS_PASSWD_3,
-    SYS_PASSWD_4,
-    SYS_IP_ADDR,
+    SYS_XMODEM_FLAG,
     SYS_UNKNOWN_TYPE = 0xFF
 };
 

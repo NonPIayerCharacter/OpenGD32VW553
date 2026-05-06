@@ -2769,6 +2769,29 @@ void nvds_dump(void *handle, uint8_t verbose, const char *namespace)
 
     sys_mutex_put(&nvds_mutex);
 }
+
+int nvds_find_all_namespace(void *handle, found_namespace_cb cb)
+{
+    struct nvds_flash_env_tag *flash_env;
+    struct namespace_info *ns;
+
+    if (handle)
+        flash_env = (struct nvds_flash_env_tag *)handle;
+    else
+        flash_env = &nvds_flash_env;
+
+
+    ns = (struct namespace_info *)list_pick(&flash_env->ns_list);
+    while (ns) {
+        if (cb)
+            cb(ns->name);
+
+        ns = (struct namespace_info*)list_next(&ns->list_hdr);
+    }
+
+    return NVDS_OK;
+}
+
 #else /* NVDS_FLASH_SUPPORT */
 int nvds_flash_internal_init()
 {
@@ -2813,4 +2836,10 @@ void nvds_dump(void *handle, uint8_t verbose, const char *namespace)
 {
     return;
 }
+
+int nvds_find_all_namespace(void *handle, found_namespace_cb cb)
+{
+    return NVDS_E_NOT_USE_FLASH;
+}
+
 #endif /* NVDS_FLASH_SUPPORT */

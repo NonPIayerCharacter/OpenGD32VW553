@@ -47,6 +47,16 @@ static at_ble_cb_t at_ble_cb;
 extern void ble_app_scan_mgr_evt_handler(ble_scan_evt_t event, ble_scan_data_u *p_data);
 static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info);
 
+static void at_ble_sec_authen_cmpl(uint8_t conn_idx, uint8_t result);
+static void at_ble_sec_input_key_req(uint8_t conn_idx);
+static void at_ble_sec_key_cfm_req(uint8_t conn_idx, uint32_t number);
+
+static const app_sec_callbacks at_ble_sec_cb = {
+    .authen_cmpl = at_ble_sec_authen_cmpl,
+    .input_key_req = at_ble_sec_input_key_req,
+    .key_cfm_req = at_ble_sec_key_cfm_req,
+};
+
 
 /*!
     \brief      Check the terminate string
@@ -81,6 +91,7 @@ void at_ble_passth_rx_callback(uint8_t conn_idx, uint16_t data_len, uint8_t *p_d
     \param[out] none
     \retval     none
 */
+
 void at_ble_passth_mode_enable(int argc, char **argv)
 {
     uint32_t cur_cnt = 0;
@@ -88,10 +99,9 @@ void at_ble_passth_mode_enable(int argc, char **argv)
     uint8_t conn_idx;
     char *endptr = NULL;
     bool reset = true;
+    ble_device_t *p_dev = NULL;
 
     AT_RSP_START(128);
-
-    ble_datatrans_srv_rx_cb_reg(at_ble_passth_rx_callback);
 
     if (argc == 2) {
         if (argv[1][0] == AT_QUESTION)
@@ -105,10 +115,21 @@ void at_ble_passth_mode_enable(int argc, char **argv)
         AT_TRACE("link has not been established\r\n");
         goto Error;
     }
+    p_dev = dm_find_dev_by_conidx(conn_idx);
 
+    if (p_dev->role == BLE_SLAVE) {
+        ble_datatrans_srv_rx_cb_reg(at_ble_passth_rx_callback);
+    }
+#if (BLE_APP_GATT_CLIENT_SUPPORT)
+    else if (p_dev->role == BLE_MASTER) {
+        ble_datatrans_cli_rx_cb_reg(at_ble_passth_rx_callback);
+        ble_gattc_co_cb_unreg(at_ble_gattc_co_cb);
+    }
+#endif
     if (!tx_buf)
         goto Error;
 
+#ifndef SUPER_UART_DMA_RX
     while (1) {
         if(reset) {
             at_hw_dma_receive_config();   //have to reconfig hw here, or one byte left data will be transfered by dma
@@ -128,9 +149,12 @@ void at_ble_passth_mode_enable(int argc, char **argv)
             break;
         }
 #ifdef CONFIG_ATCMD_SPI
-        if (RESET == spi_flag_get( SPI_FLAG_RBNE)) {
+        if (RESET == spi_flag_get( SPI_FLAG_RBNE))
 #else
-        if (RESET != usart_flag_get(at_uart_conf.usart_periph, USART_FLAG_IDLE)) {
+        if (RESET != usart_flag_get(at_uart_conf.usart_periph, USART_FLAG_IDLE))
+#endif
+        {
+#ifndef CONFIG_ATCMD_SPI
             usart_flag_clear(at_uart_conf.usart_periph, USART_FLAG_IDLE);
 #endif
             cur_cnt = at_dma_get_cur_received_num(ATBLE_PASSTH_MAX_SIZE);
@@ -143,22 +167,81 @@ void at_ble_passth_mode_enable(int argc, char **argv)
             if (at_ble_terminate_string_check(tx_buf))
                 break;
 
-            if (ble_datatrans_srv_tx(conn_idx, tx_buf, cur_cnt) != BLE_ERR_NO_ERROR) {
-                AT_TRACE("data send fail\r\n");
+            if (p_dev->role == BLE_SLAVE) {
+                if (ble_datatrans_srv_tx(0, tx_buf, cur_cnt) != BLE_ERR_NO_ERROR)
+                    AT_TRACE("data send fail\r\n");
             }
+#if (BLE_APP_GATT_CLIENT_SUPPORT)
+            else if (p_dev->role == BLE_MASTER) {
+                if (ble_datatrans_cli_write_char(0, tx_buf, cur_cnt) != BLE_ERR_NO_ERROR)
+                    AT_TRACE("data send fail\r\n");
+            }
+#endif
         }
     }
     at_hw_dma_receive_stop();
     at_hw_irq_receive_config();
     sys_mfree(tx_buf);
+
+    if (p_dev->role == BLE_SLAVE) {
+        ble_datatrans_srv_rx_cb_unreg();
+    }
+#if (BLE_APP_GATT_CLIENT_SUPPORT)
+    else if (p_dev->role == BLE_MASTER) {
+        ble_datatrans_cli_rx_cb_unreg();
+        ble_gattc_co_cb_reg(at_ble_gattc_co_cb);
+    }
+#endif
+#else
+    while (1) {
+        if(reset) {
+            reset = false;
+            sys_memset(tx_buf, 0, ATBLE_PASSTH_MAX_SIZE);
+        }
+        cur_cnt = at_hw_dma_receive_start((uint32_t)tx_buf, ATBLE_PASSTH_MAX_SIZE, 5);
+
+        if (at_ble_cb.disconn_flag == true) {
+            at_ble_cb.disconn_flag = false;
+            break;
+        }
+
+        if (cur_cnt == 0) {
+            continue;
+        }
+        else {
+            reset = true;
+
+            if (at_ble_terminate_string_check(tx_buf))
+                break;
+
+            if (ble_datatrans_srv_tx(conn_idx, tx_buf, cur_cnt) != BLE_ERR_NO_ERROR) {
+                AT_TRACE("data send fail\r\n");
+            }
+        }
+    }
+
+    at_hw_dma_receive_stop();
+    sys_mfree(tx_buf);
     ble_datatrans_srv_rx_cb_unreg();
+#endif
 
     return;
 
 Error:
     if (tx_buf)
         sys_mfree(tx_buf);
-    ble_datatrans_srv_rx_cb_unreg();
+
+    if (p_dev) {
+        if (p_dev->role == BLE_SLAVE) {
+            ble_datatrans_srv_rx_cb_unreg();
+        }
+#if (BLE_APP_GATT_CLIENT_SUPPORT)
+        else if (p_dev->role == BLE_MASTER) {
+            ble_datatrans_cli_rx_cb_unreg();
+            ble_gattc_co_cb_reg(at_ble_gattc_co_cb);
+        }
+#endif
+    }
     AT_RSP_ERR();
     return;
 
@@ -181,9 +264,9 @@ void at_ble_normal_trans_rx_callback(uint8_t conn_id, uint16_t data_len, uint8_t
     uint32_t j;
 
     AT_RSP_START(64 + data_len);
-    AT_RSP("+BLEDATA,%d,%d:", conn_id, data_len);
-    for (j = 0; j < data_len; j++)
-        AT_RSP("%c", p_data[j]);
+    AT_RSP("+BLEDATA:%d,%d,", conn_id, data_len);
+    AT_RSP_IMMEDIATE();
+    AT_RSP_DIRECT((char *)p_data, data_len);
     AT_RSP("\r\n");
     AT_RSP_OK();
 }
@@ -537,14 +620,15 @@ void at_ble_conn_evt_handler(ble_conn_evt_t event, ble_conn_data_u *p_data)
 
     if (event == BLE_CONN_EVT_STATE_CHG) {
         if (p_data->conn_state.state == BLE_CONN_STATE_DISCONNECTD) {
-            AT_RSP("disconnected. conn idx: %u, reason 0x%x\r\n", p_data->conn_state.info.discon_info.conn_idx, p_data->conn_state.info.discon_info.reason);
+            AT_RSP("+BLEDISCONN:%d,%d\r\n", p_data->conn_state.info.discon_info.conn_idx, p_data->conn_state.info.discon_info.reason);
             AT_RSP_IMMEDIATE();
             at_ble_cb.disconn_flag = true;
         }
         else if (p_data->conn_state.state == BLE_CONN_STATE_CONNECTED) {
-            AT_RSP("connect success. conn idx:%u, interval:0x%x, latancy:0x%x, supv_tout:0x%x\r\n",
-              p_data->conn_state.info.conn_info.conn_idx, p_data->conn_state.info.conn_info.con_interval,
-              p_data->conn_state.info.conn_info.con_latency, p_data->conn_state.info.conn_info.sup_to);
+            AT_RSP("+BLECONN:%d,%d,%02x:%02x:%02x:%02x:%02x:%02x\r\n", p_data->conn_state.info.conn_info.conn_idx, p_data->conn_state.info.conn_info.peer_addr.addr_type,
+                    p_data->conn_state.info.conn_info.peer_addr.addr[5], p_data->conn_state.info.conn_info.peer_addr.addr[4],
+                    p_data->conn_state.info.conn_info.peer_addr.addr[3], p_data->conn_state.info.conn_info.peer_addr.addr[2],
+                    p_data->conn_state.info.conn_info.peer_addr.addr[1], p_data->conn_state.info.conn_info.peer_addr.addr[0]);
             AT_RSP_IMMEDIATE();
             at_ble_cb.disconn_flag = false;
 #ifdef BLE_GATT_CLIENT_SUPPORT
@@ -743,23 +827,16 @@ Usage:
 void at_ble_adv_stop(int argc, char **argv)
 {
     char *endptr = NULL;
-    uint8_t idx = 0;
     bool rmv_adv = true;
     ble_status_t ret = BLE_ERR_NO_ERROR;
 
     AT_RSP_START(128);
 
-    if (argc != 2) {
+    if (argc > 1) {
         goto Error;
     }
 
-    if (argv[1][0] == AT_QUESTION) {
-        goto Usage;
-    }
-
-    idx = (uint8_t)strtoul((const char *)argv[1], &endptr, 16);
-
-    ret = app_adv_stop(idx, rmv_adv);
+    ret = app_adv_stop(0, rmv_adv);
     if (ret) {
         AT_TRACE("stop adv fail status 0x%x\r\n", ret);
         goto Error;
@@ -771,10 +848,6 @@ void at_ble_adv_stop(int argc, char **argv)
 Error:
     AT_RSP_ERR();
     return;
-
-Usage:
-    AT_RSP("+BLEADVSTOP=<adv idx>\r\n");
-    AT_RSP_OK();
 }
 
 /*!
@@ -904,7 +977,8 @@ int atcmd_ble_init(void)
     if (ble_datatrans_cli_init())
         return -4;
 #endif
-
+    app_sec_pin_code_set(888888);
+    app_sec_callbacks_set(at_ble_sec_cb);
     return 0;
 }
 
@@ -1140,7 +1214,7 @@ void at_ble_conn_param(int argc, char **argv)
             for (i = 0; i < BLE_MAX_CONN_NUM; i++) {
                 p_device = dm_find_dev_by_conidx(i);
                 if (p_device)
-                    AT_RSP("+BLECONNPARM:%d,%d,%d,%d\r\n",
+                    AT_RSP("+BLECONNPARM:%d,%x,%x,%x\r\n",
                             p_device->conn_idx, p_device->conn_info.interval, p_device->conn_info.latency, p_device->conn_info.supv_tout);
             }
         } else {
@@ -1153,9 +1227,9 @@ void at_ble_conn_param(int argc, char **argv)
             goto Error;
     } else if (argc == 5) {
         conn_idx = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
-        interval = (uint16_t)strtoul((const char *)argv[2], &endptr, 10);
-        latency  = (uint16_t)strtoul((const char *)argv[3], &endptr, 10);
-        supv_to  = (uint16_t)strtoul((const char *)argv[4], &endptr, 10);
+        interval = (uint16_t)strtoul((const char *)argv[2], &endptr, 16);
+        latency  = (uint16_t)strtoul((const char *)argv[3], &endptr, 16);
+        supv_to  = (uint16_t)strtoul((const char *)argv[4], &endptr, 16);
         ret = ble_conn_param_update_req(conn_idx, interval, interval, latency, supv_to, ce_len, ce_len);
         if (ret) {
             AT_TRACE("update param fail status 0x%x\r\n", ret);
@@ -1424,110 +1498,6 @@ static void at_ble_per_sync_evt_handler(ble_per_sync_evt_t event, ble_per_sync_d
 }
 
 /*!
-    \brief      Ble sync
-    \param[in]  argc: number of parameters
-    \param[in]  argv: the pointer to the array that holds the parameters
-    \param[out] none
-    \retval     none
-*/
-void at_ble_sync(int argc, char **argv)
-{
-    char *endptr = NULL;
-    ble_gap_per_sync_param_t param = {0};
-    ble_status_t ret = BLE_ERR_NO_ERROR;
-    char *p_str = NULL;
-    ble_gap_addr_t address = {0};
-    dev_info_t *p_dev_info = NULL;
-    AT_RSP_START(128);
-    uint8_t enable = 0;
-
-    if (argc == 2) {
-        if (argv[1][0] == AT_QUESTION)
-            goto Usage;
-        else {
-            enable = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
-            if (enable)
-                goto Error;
-            app_per_sync_cancel();
-        }
-    } else if (argc == 4) {
-        param.skip = 0;
-        param.sync_tout = 1000;     // 10s
-        param.type = BLE_GAP_PER_SYNC_TYPE_GENERAL;
-        param.conn_idx = 0;
-        param.report_en_bf = BLE_GAP_REPORT_ADV_EN_BIT | BLE_GAP_REPORT_DUPLICATE_FILTER_EN_BIT;
-        param.adv_addr.adv_sid = 0;
-
-        enable = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
-        if (!enable)
-            goto Error;
-        address.addr_type = (uint8_t)strtoul((const char *)argv[2], &endptr, 16);
-        p_str = argv[3];
-        address.addr[5] = (uint8_t)strtoul((const char *)strtok(p_str, ":"), &endptr, 16);
-        address.addr[4] = (uint8_t)strtoul((const char *)strtok(NULL, ":"), &endptr, 16);
-        address.addr[3] = (uint8_t)strtoul((const char *)strtok(NULL, ":"), &endptr, 16);
-        address.addr[2] = (uint8_t)strtoul((const char *)strtok(NULL, ":"), &endptr, 16);
-        address.addr[1] = (uint8_t)strtoul((const char *)strtok(NULL, ":"), &endptr, 16);
-        address.addr[0] = (uint8_t)strtoul((const char *)strtok(NULL, ":"), &endptr, 16);
-
-        p_dev_info = scan_mgr_find_device(&address);
-
-        if (p_dev_info == NULL) {
-            AT_TRACE("fail to find periodic advertising device\r\n");
-            goto Error;
-        }
-        param.adv_addr.addr_type = p_dev_info->peer_addr.addr_type;
-        memcpy(param.adv_addr.addr, p_dev_info->peer_addr.addr, BLE_GAP_ADDR_LEN);
-        param.adv_addr.adv_sid = p_dev_info->adv_sid;
-
-        ble_per_sync_callback_register(at_ble_per_sync_evt_handler);
-        ret = ble_per_sync_start(BLE_GAP_LOCAL_ADDR_STATIC, &param);
-        if (ret) {
-            AT_TRACE("ble sync start fail status 0x%x\r\n", ret);
-            goto Error;
-        }
-    } else {
-        goto Error;
-    }
-
-    AT_RSP_OK();
-    return;
-Error:
-    AT_RSP_ERR();
-    return;
-
-Usage:
-    AT_RSP("+BLESYNC=<enable>,<addr_type>,<addr>\r\n");
-    AT_RSP_OK();
-}
-
-/*!
-    \brief      Ble sync stop
-    \param[in]  argc: number of parameters
-    \param[in]  argv: the pointer to the array that holds the parameters
-    \param[out] none
-    \retval     none
-*/
-void at_ble_sync_stop(int argc, char **argv)
-{
-    char *endptr = NULL;
-    ble_status_t ret = BLE_ERR_NO_ERROR;
-
-    AT_RSP_START(128);
-
-    if (argc != 1)
-        goto Error;
-    app_per_sync_terminate(at_ble_cb.sync_idx);
-    ble_per_sync_callback_unregister(at_ble_per_sync_evt_handler);
-
-    AT_RSP_OK();
-    return;
-Error:
-    AT_RSP_ERR();
-    return;
-}
-
-/*!
     \brief      Ble set/get scan parameter
     \param[in]  argc: number of parameters
     \param[in]  argv: the pointer to the array that holds the parameters
@@ -1546,7 +1516,7 @@ void at_ble_scan_param(int argc, char **argv)
     if (argc == 1) {
         if (argv[0][strlen(argv[0]) - 1] == AT_QUESTION) {
             ble_scan_param_get(&own_addr_type, &param);
-            AT_RSP("+BLESCANPARAM:%d,%d,%d,%d,%d\r\n", param.type, own_addr_type, param.dup_filt_pol, param.scan_intv_1m, param.scan_win_1m);
+            AT_RSP("+BLESCANPARAM:%d,%d,%d,%x,%x,%x,%x\r\n", param.type, own_addr_type, param.dup_filt_pol, param.scan_intv_1m, param.scan_win_1m, param.scan_intv_coded, param.scan_win_coded);
             AT_RSP_OK();
             return;
         } else {
@@ -1557,17 +1527,17 @@ void at_ble_scan_param(int argc, char **argv)
             goto Usage;
         else
             goto Error;
-    } else if (argc == 6) {
+    } else if (argc == 8) {
         param.type = BLE_GAP_SCAN_TYPE_GEN_DISC;
         param.prop = BLE_GAP_SCAN_PROP_PHY_1M_BIT | BLE_GAP_SCAN_PROP_ACTIVE_1M_BIT;
 #if BLE_APP_PHY_UPDATE_SUPPORT
         param.prop |= BLE_GAP_SCAN_PROP_PHY_CODED_BIT | BLE_GAP_SCAN_PROP_ACTIVE_CODED_BIT;
 #endif
         param.dup_filt_pol = BLE_GAP_DUP_FILT_EN;
-        param.scan_intv_1m    = 160; // 100ms
-        param.scan_intv_coded = 160; // 100ms
-        param.scan_win_1m    = 48;  // 30ms
-        param.scan_win_coded = 48;  // 30ms
+        param.scan_intv_1m    = 0xa0; // 100ms
+        param.scan_intv_coded = 0xa0; // 100ms
+        param.scan_win_1m    = 0x30;  // 30ms
+        param.scan_win_coded = 0x30;  // 30ms
         param.duration = 0;
         param.period   = 0;
         own_addr_type = BLE_GAP_LOCAL_ADDR_STATIC;
@@ -1575,8 +1545,10 @@ void at_ble_scan_param(int argc, char **argv)
         param.type = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
         own_addr_type = (uint8_t)strtoul((const char *)argv[2], &endptr, 10);
         param.dup_filt_pol = (uint8_t)strtoul((const char *)argv[3], &endptr, 10);
-        param.scan_intv_1m = (uint8_t)strtoul((const char *)argv[4], &endptr, 10);
-        param.scan_win_1m = (uint16_t)strtoul((const char *)argv[5], &endptr, 10);
+        param.scan_intv_1m = (uint8_t)strtoul((const char *)argv[4], &endptr, 16);
+        param.scan_win_1m = (uint16_t)strtoul((const char *)argv[5], &endptr, 16);
+        param.scan_intv_coded = (uint8_t)strtoul((const char *)argv[6], &endptr, 16);
+        param.scan_win_coded = (uint16_t)strtoul((const char *)argv[7], &endptr, 16);
 
         ret = ble_scan_param_set(own_addr_type, &param);
         if (ret) {
@@ -1595,7 +1567,7 @@ Error:
     return;
 
 Usage:
-    AT_RSP("+BLESCANPARAM=<type>,<own_addr_type>,<dup_filt_pol>,<scan_intv_1m>,<scan_win_1m>\r\n");
+    AT_RSP("+BLESCANPARAM=<type>,<own_addr_type>,<dup_filt_pol>,<scan_intv_1m>,<scan_win_1m>,<scan_intv_coded>,<scan_win_coded>\r\n");
     AT_RSP_OK();
 }
 
@@ -1638,10 +1610,10 @@ static void at_ble_scan_mgr_report_hdlr(ble_gap_adv_report_info_t *p_info)
             p_dev_info->adv_sid = p_info->adv_sid;
             p_dev_info->idx = idx;
 
-            AT_RSP("+BLESCAN: %02X:%02X:%02X:%02X:%02X:%02X, addr type 0x%x, rssi %d, sid 0x%x, dev idx %u, peri_adv_int %u, name %s\r\n",
+            AT_RSP("+BLESCAN: %02X:%02X:%02X:%02X:%02X:%02X,%d,%d,%d,%s\r\n",
                    p_info->peer_addr.addr[5], p_info->peer_addr.addr[4], p_info->peer_addr.addr[3],
                    p_info->peer_addr.addr[2], p_info->peer_addr.addr[1], p_info->peer_addr.addr[0],
-                   p_info->peer_addr.addr_type, p_info->rssi, p_info->adv_sid, idx, p_info->period_adv_intv, name);
+                   p_info->peer_addr.addr_type, p_info->rssi, idx, name);
             AT_RSP_IMMEDIATE();
             AT_RSP_FREE();
             dbg_print(NOTICE, "new device addr %02X:%02X:%02X:%02X:%02X:%02X, addr type 0x%x, rssi %d, sid 0x%x, dev idx %u, peri_adv_int %u, name %s\r\n",
@@ -1781,13 +1753,23 @@ Usage:
     AT_RSP_OK();
 }
 
-void at_ble_svc_list_cb(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type)
+void at_ble_svc_list_cb(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type, uint8_t svc_info)
 {
     int8_t i = 0;
     AT_RSP_START(256);
+    uint8_t uuid_len = 0;
 
     AT_RSP("+BLEGATTSSVC:%d,",svc_id);
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--)
+
+    if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(16)) {
+        uuid_len = 2;
+    } else if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(32)) {
+        uuid_len = 4;
+    } else if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(128)) {
+        uuid_len = 16;
+    }
+
+    for (i = uuid_len -1; i >= 0; i--)
         AT_RSP("%02X", p_svc_uuid[i]);
     AT_RSP(",%d\r\n",svc_type);
     AT_RSP_IMMEDIATE();
@@ -1816,129 +1798,70 @@ Error:
 
 }
 
-void at_ble_char_list_cb(const uint8_t *p_char_uuid, uint16_t char_val_idx)
+void at_ble_desc_list_all_cb(uint8_t svc_id, const uint8_t *p_desc_uuid, uint16_t desc_idx, uint16_t char_info)
 {
     int8_t i = 0;
-    AT_RSP_START(256);
-
-    AT_RSP("+BLEGATTSCHAR:");
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--)
-        AT_RSP("%02X", p_char_uuid[i]);
-    AT_RSP(",%d\r\n",char_val_idx);
-    AT_RSP_IMMEDIATE();
-    AT_RSP_FREE();
-}
-
-void at_ble_gatts_list_char(int argc, char **argv)
-{
-    char *endptr = NULL;
-    uint8_t svc_id = 0xff;
-
-    AT_RSP_START(128);
-
-    if (argc == 2) {
-        if (argv[1][0] == AT_QUESTION)
-            goto Usage;
-        else {
-            svc_id = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
-            ble_gatts_list_char(svc_id, at_ble_char_list_cb);
-            AT_RSP_OK();
-        }
-    } else {
-        goto Error;
-    }
-
-    return;
-Error:
-    AT_RSP_ERR();
-    return;
-
-Usage:
-    AT_RSP("+BLEGATTSCHAR=<svc_idx>\r\n");
-    AT_RSP_OK();
-}
-
-void at_ble_desc_list_cb(const uint8_t *p_desc_uuid, uint16_t desc_idx)
-{
-    int8_t i = 0;
+    uint8_t uuid_len = 0;
     AT_RSP_START(256);
 
     AT_RSP("+BLEGATTSDESC:");
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--)
-        AT_RSP("%02X", p_desc_uuid[i]);
-    AT_RSP(",%d\r\n",desc_idx);
-    AT_RSP_IMMEDIATE();
-    AT_RSP_FREE();
-}
-
-void at_ble_gatts_list_desc(int argc, char **argv)
-{
-    char *endptr = NULL;
-    uint8_t svc_id = 0xff;
-    uint16_t char_idx = 0;
-
-    AT_RSP_START(128);
-
-    if (argc == 2) {
-        if (argv[1][0] == AT_QUESTION)
-            goto Usage;
-        else {
-            goto Error;
-        }
-    } else if (argc == 3){
-        svc_id = (uint8_t)strtoul((const char *)argv[1], &endptr, 10);
-        char_idx = (uint16_t)strtoul((const char *)argv[2], &endptr, 10);
-        ble_gatts_list_desc(svc_id, char_idx, at_ble_desc_list_cb);
-        AT_RSP_OK();
-    } else {
-        goto Error;
+    AT_RSP(",%d",svc_id);
+    AT_RSP(",%d,",desc_idx);
+    if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_16) {
+        uuid_len = 2;
+    } else if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_32) {
+        uuid_len = 4;
+    } else if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_128) {
+        uuid_len = 16;
     }
-
-    return;
-Error:
-    AT_RSP_ERR();
-    return;
-
-Usage:
-    AT_RSP("+BLEGATTSDESC=<svc_idx>,<char_idx>\r\n");
-    AT_RSP_OK();
-
-}
-
-void at_ble_desc_list_all_cb(const uint8_t *p_desc_uuid, uint16_t desc_idx)
-{
-    int8_t i = 0;
-    AT_RSP_START(256);
-
-    AT_RSP("+BLEGATTSDESC:");
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--)
+    for (i = uuid_len -1; i >= 0; i--)
         AT_RSP("%02X", p_desc_uuid[i]);
-    AT_RSP(",%d\r\n",desc_idx);
+    AT_RSP("\r\n");
     AT_RSP_IMMEDIATE();
     AT_RSP_FREE();
 }
 
-void at_ble_char_list_all_cb(const uint8_t *p_char_uuid, uint16_t char_val_idx)
+void at_ble_char_list_all_cb(uint8_t svc_id, const uint8_t *p_char_uuid, uint16_t char_val_idx, uint16_t char_info)
 {
     int8_t i = 0;
+    uint8_t uuid_len = 0;
     AT_RSP_START(256);
 
     AT_RSP("+BLEGATTSCHAR:");
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--)
+    AT_RSP(",%d",svc_id);
+    AT_RSP(",%d,",char_val_idx);
+
+    if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_16) {
+        uuid_len = 2;
+    } else if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_32) {
+        uuid_len = 4;
+    } else if (((char_info & BLE_GATT_ATTR_UUID_TYPE_MASK) >> BLE_GATT_ATTR_UUID_TYPE_LSB) == BLE_GATT_UUID_128) {
+        uuid_len = 16;
+    }
+    for (i = uuid_len -1; i >= 0; i--)
         AT_RSP("%02X", p_char_uuid[i]);
-    AT_RSP(",%d\r\n",char_val_idx);
+    AT_RSP("\r\n");
     AT_RSP_IMMEDIATE();
     AT_RSP_FREE();
     ble_gatts_list_desc(at_ble_cb.at_svc_id, char_val_idx, at_ble_desc_list_all_cb);
 }
 
-void at_ble_svc_list_all_cb(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type)
+void at_ble_svc_list_all_cb(uint8_t svc_id, const uint8_t *p_svc_uuid, uint8_t svc_type, uint8_t svc_info)
 {
     int8_t i = 0;
     AT_RSP_START(256);
+    uint8_t uuid_len = 0;
 
     AT_RSP("+BLEGATTSSVC:%d,",svc_id);
-    for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--) {
+
+    if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(16)) {
+        uuid_len = 2;
+    } else if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(32)) {
+        uuid_len = 4;
+    } else if ((svc_info & BLE_GATT_SVC_UUID_TYPE_MASK) == SVC_UUID(128)) {
+        uuid_len = 16;
+    }
+    for (i = uuid_len -1; i >= 0; i--) {
         AT_RSP("%02X", p_svc_uuid[i]);
     }
     AT_RSP(",%d\r\n",svc_type);
@@ -1973,6 +1896,7 @@ static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info)
 {
     int8_t i = 0;
     AT_RSP_START(128);
+    uint8_t uuid_len = 0;
 
     switch (p_info->cli_cb_msg_type) {
 
@@ -1980,7 +1904,13 @@ static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info)
         ble_gattc_co_disc_svc_ind_t *p_disc_svc_ind = &p_info->msg_data.disc_svc_ind;
 
         AT_RSP("+BLEGATTCDISCSVC:%02x,%02x,",p_disc_svc_ind->start_hdl, p_disc_svc_ind->end_hdl);
-        for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--) {
+        if (p_disc_svc_ind->ble_uuid.type == BLE_UUID_TYPE_16)
+            uuid_len = 2;
+        else if (p_disc_svc_ind->ble_uuid.type == BLE_UUID_TYPE_32)
+            uuid_len = 4;
+        else if (p_disc_svc_ind->ble_uuid.type == BLE_UUID_TYPE_128)
+            uuid_len = 16;
+        for (i = uuid_len -1; i >= 0; i--) {
             AT_RSP("%02X", p_disc_svc_ind->ble_uuid.data.uuid_128[i]);
         }
         AT_RSP("\r\n");
@@ -1991,7 +1921,14 @@ static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info)
         ble_gattc_co_disc_char_ind_t *p_disc_char_ind = &p_info->msg_data.disc_char_ind;
 
         AT_RSP("+BLEGATTCDISCCHAR:%02x,%02x,%02x,", p_disc_char_ind->char_hdl, p_disc_char_ind->val_hdl, p_disc_char_ind->prop);
-        for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--) {
+        if (p_disc_char_ind->ble_uuid.type == BLE_UUID_TYPE_16)
+            uuid_len = 2;
+        else if (p_disc_char_ind->ble_uuid.type == BLE_UUID_TYPE_32)
+            uuid_len = 4;
+        else if (p_disc_char_ind->ble_uuid.type == BLE_UUID_TYPE_128)
+            uuid_len = 16;
+
+        for (i = uuid_len -1; i >= 0; i--) {
             AT_RSP("%02X", p_disc_char_ind->ble_uuid.data.uuid_128[i]);
         }
         AT_RSP("\r\n");
@@ -2002,7 +1939,13 @@ static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info)
         ble_gattc_co_disc_desc_ind_t *p_disc_desc_ind = &p_info->msg_data.disc_desc_ind;
 
         AT_RSP("+BLEGATTCDISCDESC:%02x,", p_disc_desc_ind->desc_hdl);
-        for (i = BLE_GATT_UUID_128_LEN -1; i >= 0; i--) {
+        if (p_disc_desc_ind->ble_uuid.type == BLE_UUID_TYPE_16)
+            uuid_len = 2;
+        else if (p_disc_desc_ind->ble_uuid.type == BLE_UUID_TYPE_32)
+            uuid_len = 4;
+        else if (p_disc_desc_ind->ble_uuid.type == BLE_UUID_TYPE_128)
+            uuid_len = 16;
+        for (i = uuid_len -1; i >= 0; i--) {
             AT_RSP("%02X", p_disc_desc_ind->ble_uuid.data.uuid_128[i]);
         }
         AT_RSP("\r\n");
@@ -2025,9 +1968,8 @@ static ble_status_t at_ble_gattc_co_cb(ble_gattc_co_msg_info_t *p_info)
         ble_gattc_co_read_rsp_t *p_read_rsp = &p_info->msg_data.read_rsp;
 
         AT_RSP("+BLEGATTCRD:%d,%d,", p_info->conn_idx , p_read_rsp->length);
-        for (i = p_read_rsp->length -1; i >= 0; i--) {
-            AT_RSP("%02X", p_read_rsp->p_value[i]);
-        }
+        AT_RSP_IMMEDIATE();
+        AT_RSP_DIRECT((char *)p_read_rsp->p_value, p_read_rsp->length);
         AT_RSP("\r\n");
         AT_RSP_IMMEDIATE();
         sys_sema_up(&at_ble_async_sema);
@@ -2296,6 +2238,7 @@ void at_ble_passth_cli_mode_enable(int argc, char **argv)
     if (!tx_buf)
         goto Error;
 
+#ifndef SUPER_UART_DMA_RX
     while (1) {
         if(reset) {
             at_hw_dma_receive_config();   //have to reconfig hw here, or one byte left data will be transfered by dma
@@ -2315,9 +2258,12 @@ void at_ble_passth_cli_mode_enable(int argc, char **argv)
             break;
         }
 #ifdef CONFIG_ATCMD_SPI
-        if (RESET == spi_flag_get( SPI_FLAG_RBNE)) {
+        if (RESET == spi_flag_get( SPI_FLAG_RBNE))
 #else
-        if (RESET != usart_flag_get(at_uart_conf.usart_periph, USART_FLAG_IDLE)) {
+        if (RESET != usart_flag_get(at_uart_conf.usart_periph, USART_FLAG_IDLE))
+#endif
+        {
+#ifndef CONFIG_ATCMD_SPI
             usart_flag_clear(at_uart_conf.usart_periph, USART_FLAG_IDLE);
 #endif
             cur_cnt = at_dma_get_cur_received_num(ATBLE_PASSTH_MAX_SIZE);
@@ -2337,6 +2283,34 @@ void at_ble_passth_cli_mode_enable(int argc, char **argv)
     }
     at_hw_dma_receive_stop();
     at_hw_irq_receive_config();
+#else
+    while (1) {
+        if(reset) {
+            reset = false;
+            sys_memset(tx_buf, 0, ATBLE_PASSTH_MAX_SIZE);
+        }
+        cur_cnt = at_hw_dma_receive_start((uint32_t)tx_buf, ATBLE_PASSTH_MAX_SIZE, 10);
+
+        if (at_ble_cb.disconn_flag == true) {
+            at_ble_cb.disconn_flag = false;
+            break;
+        }
+
+        if (cur_cnt == 0) {
+            continue;
+        }
+        else {
+            reset = true;
+            if (at_ble_terminate_string_check(tx_buf))
+                break;
+
+            if (ble_datatrans_cli_write_char(conn_idx, tx_buf, cur_cnt) != BLE_ERR_NO_ERROR) {
+                AT_TRACE("data send fail\r\n");
+            }
+        }
+    }
+    at_hw_dma_receive_stop();
+#endif
     sys_mfree(tx_buf);
     ble_datatrans_cli_rx_cb_unreg();
     ble_gattc_co_cb_reg(at_ble_gattc_co_cb);
@@ -2355,6 +2329,45 @@ Usage:
     AT_RSP("+BLEPASSTHCLI=<conn_idx>\r\n");
     AT_RSP_OK();
     return;
+}
+
+void at_ble_set_key(int argc, char **argv)
+{
+    char *endptr = NULL;
+    uint32_t key;
+
+    AT_RSP_START(128);
+
+    if (argc == 1) {
+        if (argv[0][strlen(argv[0]) - 1] == AT_QUESTION) {
+            key = app_sec_pin_code_get();
+            AT_RSP("+BLEKEY:%06u\r\n", (unsigned int)key);
+            AT_RSP_OK();
+            return;
+        } else {
+            goto Error;
+        }
+    } else if (argc == 2) {
+        if (argv[1][0] == AT_QUESTION) {
+            goto Usage;
+        }
+
+        key = (uint32_t)strtoul((const char *)argv[1], &endptr, 10);
+        if (app_sec_pin_code_set(key) == false) {
+            goto Error;
+        }
+    }
+
+    AT_RSP_OK();
+    return;
+
+Error:
+    AT_RSP_ERR();
+    return;
+
+Usage:
+    AT_RSP("+BLESETKEY=<key>\r\n");
+    AT_RSP_OK();
 }
 
 void at_ble_set_auth(int argc, char **argv)
@@ -2539,7 +2552,7 @@ void at_ble_list_enc_dev_cb(uint8_t dev_idx, ble_device_t *p_device)
 {
     AT_RSP_START(128);
 
-    AT_RSP("+BLELISTENCDEV=%d,%02X:%02X:%02X:%02X:%02X:%02X\r\n", dev_idx,
+    AT_RSP("+BLELISTENCDEV:%d,%02X:%02X:%02X:%02X:%02X:%02X\r\n", dev_idx,
                    p_device->cur_addr.addr[5], p_device->cur_addr.addr[4], p_device->cur_addr.addr[3],
                    p_device->cur_addr.addr[2], p_device->cur_addr.addr[1], p_device->cur_addr.addr[0]);
     AT_RSP_IMMEDIATE();
@@ -2606,3 +2619,31 @@ Usage:
     AT_RSP("+BLECLEARENCDEV=<dev_idx>\r\n");
     AT_RSP_OK();
 }
+
+static void at_ble_sec_authen_cmpl(uint8_t conn_idx, uint8_t result)
+{
+    char buffer[50] = {0};
+    int data_size;
+
+    data_size = co_snprintf(buffer, 50, "+BLEAUTHENCMPL:%d,%d\r\n", conn_idx, result);
+    AT_RSP_DIRECT(buffer, data_size);
+}
+
+static void at_ble_sec_input_key_req(uint8_t conn_idx)
+{
+    char buffer[50] = {0};
+    int data_size;
+
+    data_size = co_snprintf(buffer, 50, "+BLEPASSKEYREQ:%d\r\n", conn_idx);
+    AT_RSP_DIRECT(buffer, data_size);
+}
+
+static void at_ble_sec_key_cfm_req(uint8_t conn_idx, uint32_t number)
+{
+    char buffer[50] = {0};
+    int data_size;
+
+    data_size = co_snprintf(buffer, 50, "+BLECOMPAREREQ:%d,%d\r\n", conn_idx, number);
+    AT_RSP_DIRECT(buffer, data_size);
+}
+

@@ -34,11 +34,23 @@ OF SUCH DAMAGE.
 
 #ifndef _QSPI_FLASH_API_H_
 #define _QSPI_FLASH_API_H_
+#include "app_cfg.h"
 
-void qspi_flash_api_init(void);
-int qspi_flash_erase(uint32_t offset, int len);
-int qspi_flash_write(uint32_t offset, uint8_t *data, int len);
-int qspi_flash_read(uint32_t offset, uint8_t *data, int len);
+#define    NOR_FLASH_PAGE_SIZE          (256) /*256 bytes per page */
+#define    NOR_FLASH_SECTOR_SIZE        ((uint16_t)0x1000) /* 4096 bytes */
+
+#if (QSPI_FLASH_MEM == 16)
+#define    NOR_FLASH_SECTOR_NUM         ((uint16_t)0x1000) /* 4096 */
+#elif (QSPI_FLASH_MEM == 32)
+#define    NOR_FLASH_SECTOR_NUM         ((uint16_t)0x2000) /* 8192 */
+#else
+#define    NOR_FLASH_SECTOR_NUM         (512) /* 512 */
+#endif
+
+bool qspi_flash_api_init(void);
+int qspi_flash_erase(uint32_t offset, uint32_t len);
+int qspi_flash_write(uint32_t offset, uint8_t *data, uint32_t len);
+int qspi_flash_read(uint32_t offset, uint8_t *data, uint32_t len);
 void qspi_flash_chip_erase(void);
-
+void qspi_flash_dma_enable(void);
 #endif

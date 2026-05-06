@@ -57,7 +57,7 @@ OF SUCH DAMAGE.
 
 
 /*-----------------OTA Demo Options-----------------------*/
-#define OTA_TASK_STK_SIZE                       1024  /* 1024 */
+#define OTA_TASK_STK_SIZE                       2048  /* 1024 */
 #define OTA_TASK_PRIO                           OS_TASK_PRIORITY(1)
 
 typedef enum {

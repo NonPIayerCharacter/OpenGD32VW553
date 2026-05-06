@@ -47,6 +47,10 @@ OF SUCH DAMAGE.
 #include "nvds_flash.h"
 #include "gd32vw55x_platform.h"
 
+#ifdef CONFIG_WIFI_MESH_SMART
+#include "wifi_mesh_smart.h"
+#endif
+
 // If WiFi has been closed or not
 uint8_t wifi_work_status = WIFI_RUNNING;
 const char *wifi_closed_warn = "WiFi has been closed. Please open WiFi first.\r\n";
@@ -117,25 +121,25 @@ int wifi_netlink_dbg_open(void)
 void wifi_netlink_wireless_mode_print(uint32_t wireless_mode)
 {
     if (wireless_mode == WIRELESS_MODE_UNKNOWN)
-        printf("Unknown\n");
+        printf("Unknown\r\n");
     else if (wireless_mode == WIRELESS_MODE_11BGN_AX)
-        printf("11bgn/ax\n");
+        printf("11bgn/ax\r\n");
     else if (wireless_mode == WIRELESS_MODE_11GN_AX)
-        printf("11gn/ax\n");
+        printf("11gn/ax\r\n");
     else if (wireless_mode == WIRELESS_MODE_11BGN)
-        printf("11bgn\n");
+        printf("11bgn\r\n");
     else if (wireless_mode == WIRELESS_MODE_11GN)
-        printf("11gn\n");
+        printf("11gn\r\n");
     else if (wireless_mode == WIRELESS_MODE_11N)
-        printf("11n\n");
+        printf("11n\r\n");
     else if (wireless_mode == WIRELESS_MODE_11BG)
-        printf("11bg\n");
+        printf("11bg\r\n");
     else if (wireless_mode == WIRELESS_MODE_11G)
-        printf("11g\n");
+        printf("11g\r\n");
     else if (wireless_mode == WIRELESS_MODE_11B)
-        printf("11b\n");
+        printf("11b\r\n");
     else
-        printf("Error\n");
+        printf("Error\r\n");
 }
 
 /*!
@@ -186,31 +190,31 @@ int wifi_netlink_status_print(void)
                     printf("Unknown\r\n");
                 printf("\t Security: ");
                 if (wvif->sta.cfg.akm & CO_BIT(MAC_AKM_SAE))
-                    printf("WPA3\t\n");
+                    printf("WPA3\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_PRE_RSN))
-                    printf("WEP\t\n");
+                    printf("WEP\r\n");
                 else if (wvif->sta.cfg.akm == (CO_BIT(MAC_AKM_PSK) | CO_BIT(MAC_AKM_PRE_RSN)))
-                    printf("WPA\t\n");
+                    printf("WPA\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_PSK))
-                    printf("WPA2\t\n");
+                    printf("WPA2\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_PSK_SHA256))
-                    printf("WPA2_SHA256\t\n");
+                    printf("WPA2_SHA256\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_NONE))
-                    printf("OPEN\t\n");
+                    printf("OPEN\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_8021X))
-                    printf("WPA-EAP\t\n");
+                    printf("WPA-EAP\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_8021X_SHA256))
-                    printf("WPA-EAP-SHA256\t\n");
+                    printf("WPA-EAP-SHA256\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_8021X_SUITE_B))
-                    printf("WPA-EAP-SUITE-B\t\n");
+                    printf("WPA-EAP-SUITE-B\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_8021X_SUITE_B_192))
-                    printf("WPA-EAP-SUITE-B-192\t\n");
+                    printf("WPA-EAP-SUITE-B-192\r\n");
                 else if (wvif->sta.cfg.akm == CO_BIT(MAC_AKM_OWE))
-                    printf("OWE\t\n");
+                    printf("OWE\r\n");
                 else if (wvif->sta.cfg.akm == (CO_BIT(MAC_AKM_PSK) | CO_BIT(MAC_AKM_FT_PSK)))
-                    printf("WPA2_FT\t\n");
+                    printf("WPA2_FT\r\n");
                 else
-                    printf("Unknown\t\n");
+                    printf("Unknown\r\n");
                 wireless_mode = macif_vif_wireless_mode_get(i);
                 printf("\t Mode: ");
                 wifi_netlink_wireless_mode_print(wireless_mode);
@@ -221,13 +225,14 @@ int wifi_netlink_status_print(void)
                 wifi_get_vif_ip(i, &ip_cfg);
                 printf("\t IP: "IP_FMT"\r\n", IP_ARG(ip_cfg.ipv4.addr));
                 printf("\t GW: "IP_FMT"\r\n", IP_ARG(ip_cfg.ipv4.gw));
+                printf("\t DNS: "IP_FMT"\r\n", IP_ARG(ip_cfg.ipv4.dns));
                 #ifdef CONFIG_IPV6_SUPPORT
                 {
                     char ip6_local[IPV6_ADDR_STRING_LENGTH_MAX] = {0};
                     char ip6_unique[IPV6_ADDR_STRING_LENGTH_MAX] = {0};
                     if (!wifi_get_vif_ip6(i, ip6_local, ip6_unique)) {
                         printf("\t IP6_local: [%s]\r\n", ip6_local);
-                        printf("\t IP6_uniqe: [%s]\r\n", ip6_unique);
+                        printf("\t IP6_unique: [%s]\r\n", ip6_unique);
                     }
                 }
                 #endif
@@ -254,17 +259,17 @@ int wifi_netlink_status_print(void)
             printf("\t Channel: %d\r\n", wvif->ap.cfg.channel);
             printf("\t Security: ");
             if (wvif->ap.cfg.akm == CO_BIT(MAC_AKM_NONE))
-                printf("OPEN\t\n");
+                printf("OPEN\r\n");
             else if (wvif->ap.cfg.akm == (CO_BIT(MAC_AKM_PSK) | CO_BIT(MAC_AKM_PRE_RSN)))
-                printf("WPA\t\n");
+                printf("WPA\r\n");
             else if (wvif->ap.cfg.akm == CO_BIT(MAC_AKM_PSK))
-                printf("WPA2\t\n");
+                printf("WPA2\r\n");
             else if (wvif->ap.cfg.akm == CO_BIT(MAC_AKM_SAE))
-                printf("WPA3\t\n");
+                printf("WPA3\r\n");
             else if (wvif->ap.cfg.akm == (CO_BIT(MAC_AKM_PSK) | CO_BIT(MAC_AKM_SAE)))
-                printf("WPA2/WPA3\t\n");
+                printf("WPA2/WPA3\r\n");
             else
-                printf("Unknown\t\n");
+                printf("Unknown\r\n");
             printf("\t Mode: ");
             if (wvif->ap.cfg.he_disabled)
                 wireless_mode = WIRELESS_MODE_11BGN;
@@ -280,7 +285,7 @@ int wifi_netlink_status_print(void)
                 char ip6_unique[IPV6_ADDR_STRING_LENGTH_MAX] = {0};
                 if (!wifi_get_vif_ip6(i, ip6_local, ip6_unique)) {
                     printf("\t IP6_local: [%s]\r\n", ip6_local);
-                    printf("\t IP6_uniqe: [%s]\r\n", ip6_unique);
+                    printf("\t IP6_unique: [%s]\r\n", ip6_unique);
                 }
             }
             #endif
@@ -464,9 +469,16 @@ int wifi_netlink_candidate_ap_find(int vif_idx, uint8_t *bssid, char *ssid, stru
     int max_rssi = -255;
     int found = 0;
     uint32_t result_cnt = 0;
+    struct wifi_vif_tag *wvif;
+    uint8_t scan_mode = 1;
 
     if (vif_idx >= CFG_VIF_NUM) {
         return -1;
+    }
+
+    wvif = &wifi_vif_tab[vif_idx];
+    if (wvif->sta.cfg.scan_mode_user_setted) {
+        scan_mode = wvif->sta.cfg.scan_mode;
     }
 
     if (bssid)
@@ -489,19 +501,31 @@ int wifi_netlink_candidate_ap_find(int vif_idx, uint8_t *bssid, char *ssid, stru
         result = &results->result[idx];
         if (bssid_valid) {
             if (0 == sys_memcmp(bssid, (uint8_t *)result->bssid.array, WIFI_ALEN)) {
-                if (result->rssi > max_rssi) {
-                    found++;
+                if (scan_mode == 0) {
+                    found = 1;
                     sys_memcpy(candidate, result, sizeof(*candidate));
-                    max_rssi = result->rssi;
+                    break;
+                } else {
+                    if (result->rssi > max_rssi) {
+                        found++;
+                        sys_memcpy(candidate, result, sizeof(*candidate));
+                        max_rssi = result->rssi;
+                    }
                 }
             }
         } else {
             if ((strlen(ssid) == result->ssid.length)
                 && (strncmp(ssid, (char *)result->ssid.array, result->ssid.length) == 0)) {
-                if (result->rssi > max_rssi) {
-                    found++;
+                if (scan_mode == 0) {
+                    found = 1;
                     sys_memcpy(candidate, result, sizeof(*candidate));
-                    max_rssi = result->rssi;
+                    break;
+                } else {
+                    if (result->rssi > max_rssi) {
+                        found++;
+                        sys_memcpy(candidate, result, sizeof(*candidate));
+                        max_rssi = result->rssi;
+                    }
                 }
             }
         }
@@ -542,10 +566,10 @@ int wifi_netlink_auto_conn_set(uint8_t auto_conn_enable)
 uint8_t wifi_netlink_auto_conn_get(void)
 {
     uint8_t auto_conn_enable;
-    uint8_t flash_data_len = sizeof(uint8_t);
+    uint32_t flash_data_len = sizeof(uint8_t);
 
     int ret = nvds_data_get(NULL, NVDS_NS_WIFI_INFO, WIFI_AUTO_CONN_EN,
-                            (uint8_t *)(&auto_conn_enable), (uint32_t *)(&flash_data_len));
+                            (uint8_t *)(&auto_conn_enable), &flash_data_len);
     if (ret != 0) {
         auto_conn_enable = 0;
     }
@@ -789,6 +813,7 @@ int wifi_netlink_ap_start(int vif_idx, struct ap_cfg *cfg)
     struct ap_cfg *ap_cfg;
     struct wifi_ip_addr_cfg ip_cfg;
     int res = 0;
+    uint8_t soft_ap_ip_segment = 237; // Default softap IP segment
 
     if (vif_idx >= CFG_VIF_NUM)
         return -1;
@@ -839,15 +864,37 @@ int wifi_netlink_ap_start(int vif_idx, struct ap_cfg *cfg)
     ip_cfg.ip6_mode = IP6_ADDR_SERVER;
 #endif
     ip_cfg.default_output = true;
-    ip_cfg.ipv4.addr = PP_HTONL(LWIP_MAKEU32(192, 168, 237, 1));
+
+#ifdef CONFIG_WIFI_MESH_SMART
+    extern wifi_mesh_smart_info_t mesh_smart_info;
+    if (wifi_management_concurrent_get() == 1) {
+        if (mesh_smart_info.mesh_smart_network_enabled) {
+            soft_ap_ip_segment = mesh_smart_info.cfg.softap_ip_segment;
+            ip_cfg.default_output = false;
+        }
+    }
+#endif
+    ip_cfg.ipv4.addr = PP_HTONL(LWIP_MAKEU32(192, 168, soft_ap_ip_segment, 1));
     ip_cfg.ipv4.mask = PP_HTONL(LWIP_MAKEU32(255, 255, 255, 0));
-    ip_cfg.ipv4.gw = PP_HTONL(LWIP_MAKEU32(192, 168, 237, 1));
+    ip_cfg.ipv4.gw = PP_HTONL(LWIP_MAKEU32(192, 168, soft_ap_ip_segment, 1));
     wifi_set_vif_ip(vif_idx, &ip_cfg);
+#ifdef CONFIG_NAPT
+    ip_cfg.ipv4.dns = PP_HTONL(LWIP_MAKEU32(114, 114, 114, 114));
+    dhcpd_set_dns_server(PP_HTONL(LWIP_MAKEU32(114, 114, 114, 114)));
+#endif
 
     /* 4. Set mac vif state */
     macif_vif_ap_state_set(vif_idx, AP_OPEN);
     macif_vif_ap_isolation_set(vif_idx, false);
-
+#ifdef CONFIG_NAPT
+    if (wifi_management_concurrent_get() == 1
+#ifdef CONFIG_WIFI_MESH_SMART
+        && mesh_smart_info.mesh_smart_network_enabled
+#endif
+    ) {
+        wifi_set_softap_napt_enable(vif_idx);
+    }
+#endif
     netlink_printf("IP: "IP_FMT"/24\r\n", IP_ARG(ip_cfg.ipv4.addr));
     netlink_printf("GW: "IP_FMT"/24\r\n", IP_ARG(ip_cfg.ipv4.gw));
     return 0;
@@ -859,7 +906,7 @@ int wifi_netlink_ap_start(int vif_idx, struct ap_cfg *cfg)
     \param[out] none
     \retval     0 on success and != 0 if error occured.
 */
-int wifi_netlink_ap_stop(int vif_idx)
+int wifi_netlink_ap_stop(int vif_idx, uint16_t deauth_reason)
 {
     struct wifi_vif_tag *wvif;
     struct wifi_ip_addr_cfg ip_cfg;
@@ -875,7 +922,7 @@ int wifi_netlink_ap_stop(int vif_idx)
         return 0;
 
     /* 1. stop wpas softap */
-    wifi_wpa_ap_sm_step(vif_idx, WIFI_MGMT_EVENT_STOP_AP_CMD, NULL, 0);
+    wifi_wpa_ap_sm_step(vif_idx, WIFI_MGMT_EVENT_STOP_AP_CMD, (uint8_t *)&deauth_reason, 2);
 
     /* 2. stop dhcpd and reset ip */
     ip_cfg.mode = IP_ADDR_NONE;
@@ -1012,11 +1059,7 @@ int wifi_netlink_ps_mode_set(int vif_idx, uint8_t psmode)
     struct macif_cmd_resp resp;
     struct wifi_vif_tag *wvif = vif_idx_to_wvif(vif_idx);
 
-    if (!wvif) {
-        return -1;
-    }
-
-    if (psmode > WIFI_STA_PS_MODE_BASED_ON_TD) {
+    if (!wvif || (wvif->wvif_type != WVIF_STA) || psmode > WIFI_STA_PS_MODE_BASED_ON_TD) {
         return -1;
     }
 
@@ -1345,11 +1388,20 @@ int wifi_netlink_connect_req(int vif_idx, struct sta_cfg *cfg)
     }
     wifi_netlink_scan_result_print(vif_idx, &candidate);
 
+    /* PCI_EN: Filter out OPEN/WEP encryption if pci_en=1 */
+    if (sta_cfg->pci_en == 1) {
+        if (candidate.akm == CO_BIT(MAC_AKM_NONE)) {
+            return WIFI_MGMT_CONN_NO_AP;
+        } else if (candidate.akm == CO_BIT(MAC_AKM_PRE_RSN)) {
+            return WIFI_MGMT_CONN_NO_AP;
+        }
+    }
+
     /* Check if crypto matched */
-    if ((cfg->passphrase_len != 0 && candidate.akm == CO_BIT(MAC_AKM_NONE))
-        || (cfg->passphrase_len == 0 && !(candidate.akm & (CO_BIT(MAC_AKM_NONE) | CO_BIT(MAC_AKM_OWE)
-                                        | CO_BIT(MAC_AKM_8021X) | CO_BIT(MAC_AKM_8021X_SHA256)
-                                        | CO_BIT(MAC_AKM_8021X_SUITE_B) | CO_BIT(MAC_AKM_8021X_SUITE_B_192))))) {
+    if ((cfg->passphrase_len != 0 && (candidate.akm & (CO_BIT(MAC_AKM_NONE) | CO_BIT(MAC_AKM_8021X)
+                                                        | CO_BIT(MAC_AKM_8021X_SHA256) | CO_BIT(MAC_AKM_8021X_SUITE_B)
+                                                        | CO_BIT(MAC_AKM_8021X_SUITE_B_192))))
+        || (cfg->passphrase_len == 0 && !(candidate.akm & (CO_BIT(MAC_AKM_NONE) | CO_BIT(MAC_AKM_OWE))))) {
         return WIFI_MGMT_CONN_NO_AP;
     }
 
@@ -1477,8 +1529,25 @@ int wifi_netlink_connect_req(int vif_idx, struct sta_cfg *cfg)
     mfp = (CO_BIT(MAC_CIPHER_BIP_CMAC_128) | CO_BIT(MAC_CIPHER_BIP_GMAC_128) |
            CO_BIT(MAC_CIPHER_BIP_GMAC_256) | CO_BIT(MAC_CIPHER_BIP_CMAC_256));
 
-    if (candidate.group_cipher & mfp) {
-        cmd.flags |= MFP_IN_USE;
+    uint8_t ap_support_mfp = (candidate.group_cipher & mfp) ? 1 : 0;
+
+    if (sta_cfg->mfpr_user_setted) {
+        if (sta_cfg->mfpr == 1) {
+            if (ap_support_mfp) {
+                cmd.flags |= MFP_IN_USE;
+            }
+        } else if (sta_cfg->mfpr == 2) {
+            if (ap_support_mfp) {
+                cmd.flags |= MFP_IN_USE;
+            } else {
+                ret = WIFI_MGMT_CONN_NO_AP;
+                goto fail;
+            }
+        }
+    } else {
+        if (ap_support_mfp) {
+            cmd.flags |= MFP_IN_USE;
+        }
     }
 
     if (cfg->akm & CO_BIT(MAC_AKM_NONE)) {
@@ -1745,10 +1814,6 @@ int wifi_netlink_msg_forward(int vif_idx, void *msg, bool from_wpa)
             break;
         case MACIF_ROAMING_EVENT:
             mgmt_event = WIFI_MGMT_EVENT_ROAMING_START;
-#ifdef CFG_80211R
-            param = (uint8_t *)wvif->sta.cfg.ssid;
-            len = wvif->sta.cfg.ssid_len;
-#endif /* CFG_80211R */
             break;
         case MACIF_DHCP_START_EVENT:
             mgmt_event = WIFI_MGMT_EVENT_DHCP_START;
@@ -2059,10 +2124,6 @@ int wifi_netlink_msg_forward(int vif_idx, void *msg, bool from_wpa)
             break;
         case MACIF_ROAMING_EVENT:
             mgmt_event = WIFI_MGMT_EVENT_ROAMING_START;
-#ifdef CFG_80211R
-            param = (uint8_t *)wifi_vif_tab[vif_idx].sta.cfg.ssid;
-            len = wifi_vif_tab[vif_idx].sta.cfg.ssid_len;
-#endif
             break;
         case MACIF_DHCP_START_EVENT:
             wifi_wpa_link_monitor(vif_idx, 1);

@@ -29,20 +29,21 @@
 :: OF SUCH DAMAGE.
 
 @echo off
-chcp 65001
+setlocal
+chcp 65001 >NUL
 
-set TOOLKIT=%1
-set MSDK_DIR=%2
-set MSDK_DIR=%MSDK_DIR:/=\%
-set MATTER=%4
+set "TOOLKIT=%~1"
+set "MSDK_DIR=%~2"
+set "MSDK_DIR=%MSDK_DIR:/=\%"
+set "MATTER=%~4"
 
 ::set MSDK_DIR=..\\..\\..\\..
-set SCONS_CONFIG=%MSDK_DIR%\macsw\export\wlan_config.h
-set PLATFORM_CONFIG=%MSDK_DIR%\..\config\platform_def.h
-set APP_CONFIG=%MSDK_DIR%\app\app_cfg.h
+set "SCONS_CONFIG=%MSDK_DIR%\macsw\export\wlan_config.h"
+set "PLATFORM_CONFIG=%MSDK_DIR%\..\config\platform_def.h"
+set "APP_CONFIG=%MSDK_DIR%\app\app_cfg.h"
 
 set cfg_ble_lib_max=0
-findstr /r /c:"#define[ ]*CONFIG_BLE_LIB[ ]*BLE_LIB_MAX" %APP_CONFIG% && set cfg_ble_lib_max=1
+findstr /r /c:"#define[ ]*CONFIG_BLE_LIB[ ]*BLE_LIB_MAX" "%APP_CONFIG%" >NUL && set cfg_ble_lib_max=1
 if "%cfg_ble_lib_max%" == "0" (
     echo copy min lib
     copy "%MSDK_DIR%\\lib\\libble_min.a"  "%MSDK_DIR%\\lib\\libble.a"
@@ -51,8 +52,6 @@ if "%cfg_ble_lib_max%" == "0" (
     if errorlevel 1 (
         copy "%MSDK_DIR%\\blesw\\src\\export\\config\\ble_config.h" ^
              "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"
-        copy /b "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"+,, ^
-                "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"
     )
 ) else (
     echo copy max lib
@@ -62,8 +61,6 @@ if "%cfg_ble_lib_max%" == "0" (
     if errorlevel 1 (
         copy "%MSDK_DIR%\\blesw\\src\\export\\config_max\\ble_config.h" ^
              "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"
-        copy /b "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"+,, ^
-                "%MSDK_DIR%\\blesw\\src\\export\\ble_config.h"
     )
 )
 
@@ -72,16 +69,16 @@ echo cd=%cd%
 :: generate gd32vw55x.lds
 if "%TOOLKIT%" neq "IAR" (
     if "%MATTER%" == "matter" (
-        %TOOLKIT%gcc -E -DCFG_MATTER -P -o  %MSDK_DIR%\plf\riscv\env\gd32vw55x.lds ^
-                        -x c-header %MSDK_DIR%\plf\riscv\env\gd32vw55x.ld ^
-                        -I %MSDK_DIR%\..\config -I %MSDK_DIR%\..\MBL\mainboot ^
-                        -I %MSDK_DIR%\macsw\export -I %MSDK_DIR%\util\include
+        %TOOLKIT%gcc -E -DCFG_MATTER -P -o "%MSDK_DIR%\plf\riscv\env\gd32vw55x.lds" ^
+                        -x c-header "%MSDK_DIR%\plf\riscv\env\gd32vw55x.ld" ^
+                        -I "%MSDK_DIR%\..\config" -I "%MSDK_DIR%\..\MBL\mainboot" ^
+                        -I "%MSDK_DIR%\macsw\export" -I "%MSDK_DIR%\util\include"
         ) else (
-        %TOOLKIT%gcc -E -P -o %MSDK_DIR%\plf\riscv\env\gd32vw55x.lds ^
-                        -x c-header %MSDK_DIR%\plf\riscv\env\gd32vw55x.ld ^
-                        -I %MSDK_DIR%\..\config -I %MSDK_DIR%\..\MBL\mainboot ^
-                        -I %MSDK_DIR%\macsw\export -I %MSDK_DIR%\util\include ^
-                        -I %MSDK_DIR%\app
+        %TOOLKIT%gcc -E -P -o "%MSDK_DIR%\plf\riscv\env\gd32vw55x.lds" ^
+                        -x c-header "%MSDK_DIR%\plf\riscv\env\gd32vw55x.ld" ^
+                        -I "%MSDK_DIR%\..\config" -I "%MSDK_DIR%\..\MBL\mainboot" ^
+                        -I "%MSDK_DIR%\macsw\export" -I "%MSDK_DIR%\util\include" ^
+                        -I "%MSDK_DIR%\app"
         )
 )
 
@@ -112,10 +109,10 @@ if "%TOOLKIT%" neq "IAR" (
 ::)
 
 chcp 437
-echo /* Do not change the content here, it's auto generated */ > %MSDK_DIR%\app\_build_date.h
+echo /* Do not change the content here, it's auto generated */ > "%MSDK_DIR%\app\_build_date.h"
 
 REM build date
-echo #define SDK_BUILD_DATE "%DATE:~-10% %TIME:~0,-3%" >> %MSDK_DIR%\app\_build_date.h
+echo #define SDK_BUILD_DATE "%DATE:~-10% %TIME:~0,-3%" >> "%MSDK_DIR%\app\_build_date.h"
 
 goto end
 
@@ -123,3 +120,4 @@ goto end
 python ..\\..\\gen_trace_id.py ..\\..\\msdk\\msdk_out
 
 :end
+endlocal

@@ -19,7 +19,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * Copyright (c) 2024, GigaDevice Semiconductor Inc.
+ * Copyright (c) 2026, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -382,7 +382,11 @@ netif_add(struct netif *netif,
   netif->reschedule_poll = 0;
 #endif /* LWIP_NETIF_LOOPBACK_MULTITHREADING */
 #endif /* ENABLE_LOOPBACK */
-
+/* GD modified */
+#if IP_NAPT
+  netif->napt = 0;
+#endif /* IP_NAPT */
+/* GD modified end */
 #if LWIP_IPV4
   netif_set_addr(netif, ipaddr, netmask, gw);
 #endif /* LWIP_IPV4 */

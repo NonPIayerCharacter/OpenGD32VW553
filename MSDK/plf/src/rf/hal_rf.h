@@ -76,6 +76,19 @@ enum
     RF_BW_40 = 2,
 };
 
+/// RF driver context structure.
+struct rf_env_tag
+{
+    /// Crystal frequency
+    uint8_t crystal_freq;
+};
+
+/*
+ * GLOBAL VARIABLES
+ ****************************************************************************************
+ */
+extern struct rf_env_tag rf_env;
+
 /* register operation api */
 uint32_t read_rf_reg(uint32_t regaddr);
 void write_rf_reg(uint32_t regaddr, uint32_t data);

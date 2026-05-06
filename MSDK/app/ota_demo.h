@@ -52,7 +52,7 @@ OF SUCH DAMAGE.
  ****************************************************************************************
  */
 
-int32_t ota_demo_cfg_init(const char *srv_addr, const char *image_url);
+int32_t ota_demo_cfg_init(const char *srv_addr, const char *image_url, int use_ssl);
 
 int32_t ota_demo_start(void);
 

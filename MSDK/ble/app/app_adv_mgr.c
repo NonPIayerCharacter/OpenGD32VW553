@@ -885,7 +885,7 @@ ble_status_t app_adv_create(app_adv_param_t *p_param)
         adv_param.scan_req_ntf = true;
     }
 
-    adv_param.param.max_tx_pwr = 0;
+    adv_param.param.max_tx_pwr = BLE_GAP_ADV_TX_PWR_NO_PREF;
     p_adv->remove_after_stop = true;
 
     return ble_adv_create(&adv_param, app_adv_mgr_evt_hdlr, p_adv);

@@ -45,6 +45,8 @@ OF SUCH DAMAGE.
 #include "ble_adapter.h"
 #include "app_adv_mgr.h"
 #include "crc.h"
+#include "ble_export.h"
+#include "gd32vw55x_platform.h"
 
 #if FEAT_SUPPORT_BLE_OTA
 typedef struct
@@ -125,6 +127,15 @@ static void app_dfu_srv_data_cb(uint16_t data_len, uint8_t *p_data)
         return;
     }
 
+    // Protect temporary buffer: prevent exceeding FLASH_WRITE_SIZE
+    if (dfu_srv_env.temp_buf_used_size + data_len > FLASH_WRITE_SIZE) {
+        uint8_t cmd[2] = {DFU_OPCODE_RESET, DFU_ERROR_WRONG_LENGTH};
+        ble_ota_srv_tx(0, cmd, 2);
+        dbg_print(NOTICE, "dfu srv data overflow: %d + %d\r\n", dfu_srv_env.temp_buf_used_size, data_len);
+        app_dfu_srv_reset();
+        return;
+    }
+
     sys_memcpy(dfu_srv_env.p_tem_buf + dfu_srv_env.temp_buf_used_size, p_data, data_len);
     dfu_srv_env.temp_buf_used_size += data_len;
 
@@ -162,6 +173,12 @@ static void app_dfu_srv_control_cb(uint16_t data_len, uint8_t *p_data)
     sys_timer_stop(&dfu_srv_timer, false);
 
     dbg_print(NOTICE,"app_dfu_srv_control_callback, opcode: %d\r\n", opcode);
+
+    // Basic opcode and length validation
+    if (opcode >= DFU_OPCODE_MAX) {
+        error_code = DFU_ERROR_STATE_ERROR;
+        goto error;
+    }
 
     if (data_len != dfu_srv_cmd_cb[opcode].dfu_cmd_len) {
         error_code = DFU_ERROR_WRONG_LENGTH;
@@ -208,6 +225,11 @@ static void app_dfu_srv_control_cb(uint16_t data_len, uint8_t *p_data)
             goto error;
         }
 
+        // Basic image size validation
+        if (size == 0 || size > dfu_srv_env.total_bank_size) {
+            error_code = DFU_ERROR_MEMORY_CAPA_EXCEED;
+            goto error;
+        }
         dfu_srv_env.ota_img_size = size;
 //        raw_flash_erase(dfu_srv_env.new_img_addr, dfu_srv_env.ota_img_size);    //left here for erasing time test
 
@@ -342,23 +364,46 @@ error:
     app_dfu_srv_reset();
 }
 
-void app_dfu_srv_disconn_cb(uint8_t conn_idx)
+static bool app_dfu_srv_set_flag(void)
 {
     int32_t res = 0;
+    uint8_t sleep_mode = ble_sleep_mode_get();
 
+    if (sleep_mode != 0) {
+        ble_sleep_mode_set(0);
+        ble_stack_task_resume(false);
+        // wait ble pmu on, timeout 10ms
+        ble_wait_sleep_exit(10);
+
+        res = rom_sys_set_img_flag(dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_NEWER_MASK), (IMG_FLAG_IA_OK | IMG_FLAG_OLDER));
+        res |= rom_sys_set_img_flag(!dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_VERIFY_MASK | IMG_FLAG_NEWER_MASK), IMG_FLAG_NEWER);
+
+        ble_sleep_mode_set(sleep_mode);
+    } else {
+        res = rom_sys_set_img_flag(dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_NEWER_MASK), (IMG_FLAG_IA_OK | IMG_FLAG_OLDER));
+        res |= rom_sys_set_img_flag(!dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_VERIFY_MASK | IMG_FLAG_NEWER_MASK), IMG_FLAG_NEWER);
+    }
+
+    if (res != 0) {
+        dbg_print(NOTICE, "image switch fail\r\n");
+        app_dfu_srv_reset();
+        return false;
+    }
+
+    return true;
+}
+
+void app_dfu_srv_disconn_cb(uint8_t conn_idx)
+{
     if (!app_dfu_srv_state_check(DFU_STATE_SRV_DISCONNECTING)) {
         app_dfu_srv_reset();
         return;
     }
-    res = rom_sys_set_img_flag(dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_NEWER_MASK), (IMG_FLAG_IA_OK | IMG_FLAG_OLDER));
-    res |= rom_sys_set_img_flag(!dfu_srv_env.working_bank, (IMG_FLAG_IA_MASK | IMG_FLAG_VERIFY_MASK | IMG_FLAG_NEWER_MASK), IMG_FLAG_NEWER);
-    if (res != 0) {
-        dbg_print(NOTICE, "image switch fail\r\n");
-        app_dfu_srv_reset();
-        return;
+
+    if(app_dfu_srv_set_flag()) {
+        dbg_print(NOTICE,"dfu_srv_success\r\n");
+        SysTimer_SoftwareReset();
     }
-    dbg_print(NOTICE,"dfu_srv_success\r\n");
-    SysTimer_SoftwareReset();
 }
 
 void app_dfu_srv_ind_cb(uint8_t conn_idx)
@@ -384,8 +429,8 @@ static void app_dfu_srv_ota_timer_timeout_cb( void *ptmr, void *p_arg )
     cmd[0] = DFU_OPCODE_RESET;
     cmd[1] = DFU_ERROR_TIMEOUT;
     ble_ota_srv_tx(0, cmd, 2);
-
-    dfu_srv_env.state = DFU_STATE_SRV_IDLE;
+    // Reset on timeout to avoid resource leaks and hung state
+    app_dfu_srv_reset();
 }
 
 static void app_dfu_adp_evt_handler(ble_adp_evt_t event, ble_adp_data_u *p_data)

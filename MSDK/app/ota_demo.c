@@ -40,9 +40,17 @@ OF SUCH DAMAGE.
 
 #include "rom_export.h"
 #include "raw_flash_api.h"
-#include "app_cfg.h"
+#include <app_cfg.h>
 #include "dbg_print.h"
 #include "ota_demo.h"
+
+/* mbedtls headers for HTTPS support */
+#include "mbedtls/ssl.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/error.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/x509_crt.h"
 
 #ifdef CONFIG_OTA_DEMO_SUPPORT
 
@@ -51,7 +59,8 @@ OF SUCH DAMAGE.
 #define INVALID_SOCKET              (-1)
 #define OTA_SOCKET_RECV_TIMEOUT     60000
 
-#define PORT                        80
+#define HTTP_PORT                   80
+#define HTTPS_PORT                  443
 #define TERM                        "\r\n"
 #define ENDING                      "\r\n\r\n"
 
@@ -60,8 +69,21 @@ struct ota_srv_cfg {
     int32_t port;
     int32_t sockfd;
     char image_url[OTA_IMAGE_URL_MAX_LEN];
+    int use_ssl;  /* 0=HTTP, 1=HTTPS */
 };
 static struct ota_srv_cfg ota_demo_cfg;
+
+/* SSL context for HTTPS connections */
+typedef struct {
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_net_context server_fd;
+    mbedtls_entropy_context entropy;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_x509_crt cacert;
+} ota_ssl_context_t;
+
+static ota_ssl_context_t *g_ota_ssl_ctx = NULL;
 
 /**
  ****************************************************************************************
@@ -72,20 +94,151 @@ static struct ota_srv_cfg ota_demo_cfg;
  * @return    If the initialization is done or not
  ****************************************************************************************
  */
-int32_t ota_demo_cfg_init(const char *srv_addr, const char *image_url)
+int32_t ota_demo_cfg_init(const char *srv_addr, const char *image_url, int use_ssl)
 {
     if (srv_addr == NULL || strlen(srv_addr) >= sizeof(ota_demo_cfg.host))
         return -1;
     if (image_url == NULL || strlen(image_url) >= sizeof(ota_demo_cfg.image_url))
         return -1;
 
-    ota_demo_cfg.port = PORT;
+    /* Save SSL mode */
+    ota_demo_cfg.use_ssl = use_ssl;
+
+    /* Set port based on protocol: 443 for HTTPS, 80 for HTTP */
+    ota_demo_cfg.port = ota_demo_cfg.use_ssl ? HTTPS_PORT : HTTP_PORT;
     ota_demo_cfg.sockfd = -1;
 
     sys_memcpy(ota_demo_cfg.host, srv_addr, strlen(srv_addr) + 1);
     sys_memcpy(ota_demo_cfg.image_url, image_url, strlen(image_url) + 1);
 
+    app_print("OTA config: %s mode, server=%s, port=%d, path=%s\r\n",
+              ota_demo_cfg.use_ssl ? "HTTPS" : "HTTP",
+              ota_demo_cfg.host, ota_demo_cfg.port, ota_demo_cfg.image_url);
+
     return 0;
+}
+
+/**
+ ****************************************************************************************
+ * @brief Initialize SSL context for HTTPS
+ ****************************************************************************************
+ */
+static int32_t ssl_init(const char *host, uint32_t port)
+{
+    int ret;
+    const char *pers = "ota_ssl_client";
+
+    if (g_ota_ssl_ctx != NULL) {
+        return 0; // Already initialized
+    }
+
+    g_ota_ssl_ctx = (ota_ssl_context_t *)sys_zalloc(sizeof(ota_ssl_context_t));
+    if (g_ota_ssl_ctx == NULL) {
+        app_print("Failed to allocate SSL context\r\n");
+        return -1;
+    }
+
+    /* Initialize SSL structures */
+    mbedtls_ssl_init(&g_ota_ssl_ctx->ssl);
+    mbedtls_ssl_config_init(&g_ota_ssl_ctx->conf);
+    mbedtls_net_init(&g_ota_ssl_ctx->server_fd);
+    mbedtls_entropy_init(&g_ota_ssl_ctx->entropy);
+    mbedtls_ctr_drbg_init(&g_ota_ssl_ctx->ctr_drbg);
+    mbedtls_x509_crt_init(&g_ota_ssl_ctx->cacert);
+
+    /* Seed random number generator */
+    ret = mbedtls_ctr_drbg_seed(&g_ota_ssl_ctx->ctr_drbg,
+                                mbedtls_entropy_func,
+                                &g_ota_ssl_ctx->entropy,
+                                (const unsigned char *)pers,
+                                strlen(pers));
+    if (ret != 0) {
+        app_print("mbedtls_ctr_drbg_seed failed: -0x%x\r\n", -ret);
+        goto exit;
+    }
+
+    /* Connect to server */
+    char port_str[6];
+    snprintf(port_str, sizeof(port_str), "%u", port);
+    ret = mbedtls_net_connect(&g_ota_ssl_ctx->server_fd, host, port_str, MBEDTLS_NET_PROTO_TCP);
+    if (ret != 0) {
+        app_print("mbedtls_net_connect failed: -0x%x\r\n", -ret);
+        goto exit;
+    }
+    app_print("Connected to %s:%d\r\n", host, port);
+
+    /* Setup SSL/TLS config */
+    ret = mbedtls_ssl_config_defaults(&g_ota_ssl_ctx->conf,
+                                     MBEDTLS_SSL_IS_CLIENT,
+                                     MBEDTLS_SSL_TRANSPORT_STREAM,
+                                     MBEDTLS_SSL_PRESET_DEFAULT);
+    if (ret != 0) {
+        app_print("mbedtls_ssl_config_defaults failed: -0x%x\r\n", -ret);
+        goto exit;
+    }
+
+    /* Skip certificate verification for OTA (optional - can be enabled if you have CA cert) */
+    mbedtls_ssl_conf_authmode(&g_ota_ssl_ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls_ssl_conf_rng(&g_ota_ssl_ctx->conf, mbedtls_ctr_drbg_random, &g_ota_ssl_ctx->ctr_drbg);
+    mbedtls_ssl_conf_read_timeout(&g_ota_ssl_ctx->conf, OTA_SOCKET_RECV_TIMEOUT);
+
+    /* Setup SSL context */
+    ret = mbedtls_ssl_setup(&g_ota_ssl_ctx->ssl, &g_ota_ssl_ctx->conf);
+    if (ret != 0) {
+        app_print("mbedtls_ssl_setup failed: -0x%x\r\n", -ret);
+        goto exit;
+    }
+
+    /* Set hostname for SNI */
+    mbedtls_ssl_set_hostname(&g_ota_ssl_ctx->ssl, host);
+
+    /* Set I/O functions */
+    mbedtls_ssl_set_bio(&g_ota_ssl_ctx->ssl, &g_ota_ssl_ctx->server_fd,
+                       mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
+
+    /* Perform SSL handshake */
+    app_print("Performing SSL handshake...\r\n");
+    while ((ret = mbedtls_ssl_handshake(&g_ota_ssl_ctx->ssl)) != 0) {
+        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            app_print("mbedtls_ssl_handshake failed: -0x%x\r\n", -ret);
+            goto exit;
+        }
+    }
+    app_print("SSL handshake completed\r\n");
+
+    return 0;
+
+exit:
+    if (g_ota_ssl_ctx) {
+        mbedtls_net_free(&g_ota_ssl_ctx->server_fd);
+        mbedtls_ssl_free(&g_ota_ssl_ctx->ssl);
+        mbedtls_ssl_config_free(&g_ota_ssl_ctx->conf);
+        mbedtls_ctr_drbg_free(&g_ota_ssl_ctx->ctr_drbg);
+        mbedtls_entropy_free(&g_ota_ssl_ctx->entropy);
+        mbedtls_x509_crt_free(&g_ota_ssl_ctx->cacert);
+        sys_mfree(g_ota_ssl_ctx);
+        g_ota_ssl_ctx = NULL;
+    }
+    return -1;
+}
+
+/**
+ ****************************************************************************************
+ * @brief Cleanup SSL context
+ ****************************************************************************************
+ */
+static void ssl_cleanup(void)
+{
+    if (g_ota_ssl_ctx) {
+        mbedtls_net_free(&g_ota_ssl_ctx->server_fd);
+        mbedtls_ssl_free(&g_ota_ssl_ctx->ssl);
+        mbedtls_ssl_config_free(&g_ota_ssl_ctx->conf);
+        mbedtls_ctr_drbg_free(&g_ota_ssl_ctx->ctr_drbg);
+        mbedtls_entropy_free(&g_ota_ssl_ctx->entropy);
+        mbedtls_x509_crt_free(&g_ota_ssl_ctx->cacert);
+        sys_mfree(g_ota_ssl_ctx);
+        g_ota_ssl_ctx = NULL;
+    }
 }
 
 /**
@@ -102,6 +255,20 @@ int32_t ota_demo_cfg_init(const char *srv_addr, const char *image_url)
  */
 static int32_t http_socket_init(char *host, uint32_t port)
 {
+    /* Check if HTTPS mode is enabled */
+    if (ota_demo_cfg.use_ssl) {
+        app_print("Initializing HTTPS connection...\r\n");
+        int ret = ssl_init(host, port);
+        if (ret == 0) {
+            app_print("HTTPS connection established\r\n");
+            return 1; // Return non-negative value to indicate success
+        } else {
+            app_print("HTTPS connection failed\r\n");
+            return -1;
+        }
+    }
+
+    /* HTTP mode - original implementation */
     struct sockaddr_in sock;
     int32_t sid = INVALID_SOCKET;
     int32_t n = 1, ret;
@@ -258,11 +425,23 @@ static int32_t http_req_image(int32_t sid, char *host, uint16_t port, char *url)
 
     app_print("Send: %s", getBuf);
     totalLen = strlen(getBuf);
-    ret = send(sid, getBuf, totalLen, 0);
-    if (ret > 0)
-        ret = 0;
-    else
-        ret = -2;
+
+    /* Use SSL write for HTTPS, otherwise use regular send */
+    if (ota_demo_cfg.use_ssl && g_ota_ssl_ctx) {
+        ret = mbedtls_ssl_write(&g_ota_ssl_ctx->ssl, (const unsigned char *)getBuf, totalLen);
+        if (ret > 0)
+            ret = 0;
+        else {
+            app_print("SSL write failed: -0x%x\r\n", -ret);
+            ret = -2;
+        }
+    } else {
+        ret = send(sid, getBuf, totalLen, 0);
+        if (ret > 0)
+            ret = 0;
+        else
+            ret = -2;
+    }
 
     sys_mfree(getBuf);
     return ret;
@@ -298,10 +477,20 @@ static int32_t http_rsp_image(int32_t sid, uint32_t running_idx)
 
     sys_memset(recvbuf, 0, RECBUFFER_LEN);
 
-    recv_len = recv(sid, recvbuf, RECBUFFER_LEN, 0);
-    if (recv_len <= 0) {
-        ret = -2;
-        goto Exit;
+    /* Use SSL read for HTTPS, otherwise use regular recv */
+    if (ota_demo_cfg.use_ssl && g_ota_ssl_ctx) {
+        recv_len = mbedtls_ssl_read(&g_ota_ssl_ctx->ssl, recvbuf, RECBUFFER_LEN);
+        if (recv_len <= 0) {
+            app_print("SSL read failed: -0x%x\r\n", -recv_len);
+            ret = -2;
+            goto Exit;
+        }
+    } else {
+        recv_len = recv(sid, recvbuf, RECBUFFER_LEN, 0);
+        if (recv_len <= 0) {
+            ret = -2;
+            goto Exit;
+        }
     }
 
     if (200 != http_rsp_code(recvbuf)) {
@@ -368,11 +557,21 @@ static int32_t http_rsp_image(int32_t sid, uint32_t running_idx)
         if (recv_len > RECBUFFER_LEN)
             recv_len = RECBUFFER_LEN;
 
-        recv_len = recv(sid, recvbuf, recv_len, 0);
-        if (recv_len < 0 && (recv_len != -EAGAIN && recv_len != -EWOULDBLOCK)) {
-            app_print("Http socket recv error\r\n");
-            ret = -7;
-            goto Exit;
+        /* Use SSL read for HTTPS, otherwise use regular recv */
+        if (ota_demo_cfg.use_ssl && g_ota_ssl_ctx) {
+            recv_len = mbedtls_ssl_read(&g_ota_ssl_ctx->ssl, recvbuf, recv_len);
+            if (recv_len < 0 && recv_len != MBEDTLS_ERR_SSL_WANT_READ && recv_len != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                app_print("SSL read error: -0x%x\r\n", -recv_len);
+                ret = -7;
+                goto Exit;
+            }
+        } else {
+            recv_len = recv(sid, recvbuf, recv_len, 0);
+            if (recv_len < 0 && (recv_len != -EAGAIN && recv_len != -EWOULDBLOCK)) {
+                app_print("Http socket recv error\r\n");
+                ret = -7;
+                goto Exit;
+            }
         }
         buf = recvbuf;
     } while (offset < body_len);
@@ -432,7 +631,13 @@ static void ota_demo_task(void)
 
     app_print("Download new image successfully. Please reboot now.\r\n");
 Exit:
-    if (ota_demo_cfg.sockfd >= 0)
+    /* Cleanup SSL context if using HTTPS */
+    if (ota_demo_cfg.use_ssl) {
+        ssl_cleanup();
+    }
+
+    /* Close socket for HTTP mode */
+    if (ota_demo_cfg.sockfd >= 0 && !ota_demo_cfg.use_ssl)
         close(ota_demo_cfg.sockfd);
 
     sys_task_delete(NULL);

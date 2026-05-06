@@ -81,6 +81,8 @@ enum nvds_ret {
 #define NVDS_NS_WIFI_INFO               "wifi_info"
 
 typedef void (*found_keys_cb) (const char *namespace, const char *key, uint16_t val_len);
+typedef void (*found_namespace_cb) (const char *namespace);
+
 /*
  * FUNCTION DECLARATIONS
  ****************************************************************************************
@@ -89,6 +91,8 @@ typedef void (*found_keys_cb) (const char *namespace, const char *key, uint16_t 
 int nvds_find_keys_by_namespace(void *handle, const char *namespace, found_keys_cb cb);
 
 int nvds_del_keys_by_namespace(void *handle, const char *namespace);
+
+int nvds_find_all_namespace(void *handle, found_namespace_cb cb);
 
 /**
  ****************************************************************************************

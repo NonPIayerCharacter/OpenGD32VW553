@@ -50,4 +50,12 @@ OF SUCH DAMAGE.
 #define TEST_ALICLOUD               1
 #define TEST_WIFI_CONFIG            2
 
+#ifdef CFG_BLE_SUPPORT
+#undef CFG_BLE_SUPPORT
+#endif
+
+#ifdef CFG_COEX
+#undef CFG_COEX
+#endif
+
 #endif  /* _APP_CFG_H_ */

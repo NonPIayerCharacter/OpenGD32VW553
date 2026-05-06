@@ -138,9 +138,9 @@ enum {
 // Stack size of tasks created by the CLI application
 enum {
     // CLI task stack size
-    CLI_STACK_SIZE = 512, //512, // 768, for compiler op level -o0
+    CLI_STACK_SIZE = 768, //512, // 768, for compiler op level -o0
 #ifdef CONFIG_ATCMD
-#ifdef CONFIG_ATCMD_HTTP_CLIENT
+#if defined(CONFIG_ATCMD_HTTP_CLIENT) || defined(CONFIG_MQTT)
     ATCMD_STACK_SIZE = 768,
 #else
     ATCMD_STACK_SIZE = 512,

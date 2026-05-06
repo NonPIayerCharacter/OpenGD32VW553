@@ -45,12 +45,9 @@ extern "C" {
 #include "cyclic_buffer.h"
 #include "app_cfg.h"
 
-//#define CONFIG_SPI_3_WIRED
+#define CONFIG_SPI_3_WIRED
 
 #if defined(CONFIG_ATCMD_SPI) || defined(SPI_ROLE_MASTER)
-
-#define SPI_NSS_GPIO                    GPIOA
-#define SPI_NSS_PIN                     GPIO_PIN_4
 
 #define SPI_SCK_GPIO                    GPIOA
 #define SPI_SCK_PIN                     GPIO_PIN_2
@@ -62,6 +59,9 @@ extern "C" {
 #define SPI_MOSI_PIN                    GPIO_PIN_0
 
 #define SPI_AF_NUM                      GPIO_AF_5
+
+#define SPI_NSS_GPIO                    GPIOA
+#define SPI_NSS_PIN                     GPIO_PIN_4
 
 #define SPI_HANDSHAKE_GPIO              GPIOA
 #define SPI_HANDSHAKE_PIN               GPIO_PIN_5
@@ -87,6 +87,12 @@ void spi_rx_flush(void);
 
 void spi_handshake_gpio_config(void);
 void spi_handshake_rising_trigger(void);
+
+#ifdef CONFIG_SPI_3_WIRED
+void spi_nss_gpio_config(void);
+void spi_nss_rising_trigger(bool from_isr);
+#endif
+
 #endif
 
 #ifdef __cplusplus

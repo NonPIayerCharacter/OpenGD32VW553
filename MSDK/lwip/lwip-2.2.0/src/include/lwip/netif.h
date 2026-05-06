@@ -5,6 +5,7 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * Copyright (c) 2026, GigaDevice Semiconductor Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -403,6 +404,11 @@ struct netif {
   u8_t reschedule_poll;
 #endif /* LWIP_NETIF_LOOPBACK_MULTITHREADING */
 #endif /* ENABLE_LOOPBACK */
+/* GD modified */
+#if LWIP_IPV4 && IP_NAPT
+  u8_t napt;
+#endif /*LWIP_IPV4 && IP_NAPT */
+/* GD modified end */
 };
 
 #if LWIP_CHECKSUM_CTRL_PER_NETIF

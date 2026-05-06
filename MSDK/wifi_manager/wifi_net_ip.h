@@ -119,6 +119,9 @@ struct wifi_ip_addr_cfg
 uint16_t wifi_ip_chksum(const void *dataptr, int len);
 int wifi_set_vif_ip(int vif_idx, struct wifi_ip_addr_cfg *cfg);
 int wifi_get_vif_ip(int vif_idx, struct wifi_ip_addr_cfg *cfg);
+#ifdef CONFIG_NAPT
+int wifi_set_softap_napt_enable(int vif_idx);
+#endif
 #ifdef CONFIG_IPV6_SUPPORT
 int wifi_get_vif_ip6(int vif_idx, char *ip6_local, char *ip6_unique);
 uint8_t wifi_ipv6_is_got(int vif_idx);

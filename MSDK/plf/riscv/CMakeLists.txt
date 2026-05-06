@@ -1,34 +1,46 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-add_library(riscv_api INTERFACE)
+add_library(riscv)
 
 
-target_sources(${TARGET_EXE}
+
+target_sources(riscv
     PRIVATE
         env/entry.S
         env/start.S
         env/env_init.c
         env/handlers.c
+        arch/lib/lib_hook.c
         gd32vw55x/gd32vw55x_it.c
         gd32vw55x/system_gd32vw55x.c
-        arch/lib/lib_hook.c
 )
 
-
-target_include_directories(riscv_api
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gd32vw55x>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/NMSIS/Core/Include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/NMSIS/DSP/Include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/NMSIS/DSP/Include/dsp>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/arch>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/arch/boot>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/arch/lib>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/arch/ll>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/arch/compiler>
+set(RISCV_INCLUDE_REL_PATHS
+        gd32vw55x
+        NMSIS/Core/Include
+        NMSIS/DSP/Include
+        NMSIS/DSP/Include/dsp
+        arch
+        arch/boot
+        arch/lib
+        arch/ll
+        arch/compiler
 )
 
+msdk_agg_api(riscv_api ${RISCV_INCLUDE_REL_PATHS})
 
-add_lib_api(riscv_api)
+target_link_libraries(riscv
+    PUBLIC riscv_api
+    PRIVATE
+        bsp_api
+        util_api
+        rtos_api
+        gd32vw55x_ble_api
+)
+
+set_library_output_destination(riscv)
+
+#msdk_agg_module(riscv)
+
 

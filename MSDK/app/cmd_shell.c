@@ -33,7 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "config_gdm32.h"
-#include "app_cfg.h"
+#include <app_cfg.h>
 #include "wlan_config.h"
 #include "build_config.h"
 #include "gd32vw55x.h"
@@ -56,6 +56,7 @@ OF SUCH DAMAGE.
 #include "log_uart.h"
 #include "wakelock.h"
 #include "trace_uart.h"
+#include "rom_export.h"
 #ifdef CONFIG_OTA_DEMO_SUPPORT
 #include "ota_demo.h"
 #endif
@@ -99,6 +100,10 @@ OF SUCH DAMAGE.
 #include "wifi_softap_provisioning.h"
 #endif
 
+#ifdef CONFIG_WIFI_MESH_SMART
+#include "wifi_mesh_smart.h"
+#endif
+
 // CLI task message queue size
 #define CLI_QUEUE_SIZE 3
 
@@ -136,6 +141,13 @@ extern void cmd_lwip_sockets_server(int argc, char **argv);
 extern void cmd_lwip_sockets_close(int argc, char **argv);
 extern void cmd_lwip_sockets_get_status(int argc, char **argv);
 #endif
+
+// scan callback function
+static void cb_scan_done(void *eloop_data, void *user_ctx);
+static void cb_scan_fail(void *eloop_data, void *user_ctx);
+// connect callback function
+static void cb_connect_success(void *eloop_data, void *user_ctx);
+static void cb_connect_fail(void *eloop_data, void *user_ctx);
 
 static void uart_cmd_rx_indicate(void)
 {
@@ -463,6 +475,20 @@ Usage:
     app_print("Usage: ps_stats\n\r");
 }
 
+static void cmd_xmodem(int argc, char **argv)
+{
+    int ret;
+    uint8_t xmodem_flag = 1;
+
+    ret = rom_sys_status_set(SYS_XMODEM_FLAG, 1, &xmodem_flag);
+    if (ret < 0) {
+        app_print("rom sys status set fail\r\n");
+        return;
+    }
+    printf("\r\n#");
+    SysTimer_SoftwareReset();
+}
+
 /**
  ****************************************************************************************
  * @brief Process function for 'cpu_stats' command
@@ -647,15 +673,15 @@ static void cb_scan_done(void *eloop_data, void *user_ctx)
 {
     app_print("WIFI_SCAN: done\r\n");
     wifi_netlink_scan_results_print(WIFI_VIF_INDEX_DEFAULT, wifi_netlink_scan_result_print);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, cb_scan_fail);
 }
 
 static void cb_scan_fail(void *eloop_data, void *user_ctx)
 {
     app_print("WIFI_SCAN: failed\r\n");
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, cb_scan_done);
+    eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, cb_scan_fail);
 }
 
 static void cmd_wifi_scan(int argc, char **argv)
@@ -665,8 +691,8 @@ static void cmd_wifi_scan(int argc, char **argv)
     eloop_event_register(WIFI_MGMT_EVENT_SCAN_FAIL, cb_scan_fail, NULL, NULL);
 
     if (wifi_management_scan(false, NULL)) {
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE);
-        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL);
+        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_DONE, cb_scan_done);
+        eloop_event_unregister(WIFI_MGMT_EVENT_SCAN_FAIL, cb_scan_fail);
         app_print("Wifi scan failed\r\n");
     }
 #else
@@ -695,16 +721,16 @@ static void cb_connect_success(void *eloop_data, void *user_ctx)
 {
     app_print("WIFI_CONNECT: success\r\n");
 
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS);
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS, cb_connect_success);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL, cb_connect_fail);
 }
 
 static void cb_connect_fail(void *eloop_data, void *user_ctx)
 {
     app_print("WIFI_CONNECT: fail\r\n");
 
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS);
-    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_SUCCESS, cb_connect_success);
+    eloop_event_unregister(WIFI_MGMT_EVENT_CONNECT_FAIL, cb_connect_fail);
 }
 
 static void cmd_wifi_connect(int argc, char **argv)
@@ -1840,20 +1866,57 @@ void cmd_fatfs(int argc, char **argv)
 }
 #endif
 
+#ifdef USE_QSPI_FLASH
+extern void qspi_flash_chip_erase(void);
+static void cmd_qspi_flash_chip_erase(int argc, char **argv)
+{
+    qspi_flash_chip_erase();
+    app_print("cmd_qspi_flash_chip_erase done! \r\n");
+}
+#endif
+
+static void cmd_image_switch(int argc, char **argv)
+{
+    uint8_t running_idx = 0;
+    uint32_t res = 0;
+
+    res = rom_sys_status_get(SYS_RUNNING_IMG, LEN_SYS_RUNNING_IMG, &running_idx);
+
+    res = rom_sys_set_img_flag(running_idx, (IMG_FLAG_IA_MASK | IMG_FLAG_NEWER_MASK), (IMG_FLAG_IA_OK | IMG_FLAG_OLDER));
+    res |= rom_sys_set_img_flag(!running_idx, (IMG_FLAG_IA_MASK | IMG_FLAG_VERIFY_MASK | IMG_FLAG_NEWER_MASK), 0);
+    res |= rom_sys_set_img_flag(!running_idx, IMG_FLAG_NEWER_MASK, IMG_FLAG_NEWER);
+
+    if (res != 0) {
+        app_print("Set sys image status failed(res = %d), switch image failed!\r\n", res);
+        return;
+    }
+
+    app_print("Switch image successful, please reboot now!\r\n");
+    return;
+}
+
 // Array of supported CLI command
 static const struct cmd_entry cmd_table[] =
 {
     {"help", cmd_help},
     {"reboot", cmd_reboot},
     {"version", cmd_version},
+#ifdef USE_QSPI_FLASH
+    {"qspi_flash_chip_erase", cmd_qspi_flash_chip_erase},
+#endif
 
+#ifdef CONFIG_FATFS_SUPPORT
+    {"fatfs", cmd_fatfs},
+#endif
+
+    {"rmem", cmd_read_memory},
 #ifdef CONFIG_BASECMD
     {"tasks", cmd_task_list},
     {"free", cmd_free},
     {"sys_ps", cmd_sys_ps},
     {"cpu_stats", cmd_cpu_stats},
-    {"rmem", cmd_read_memory},
     {"ps_stats", cmd_ps_stats},
+    {"xmodem", cmd_xmodem},
 #ifdef CFG_WLAN_SUPPORT
     {"ping", cmd_ping},
     {"join_group", cmd_group_join},
@@ -1921,9 +1984,6 @@ static const struct cmd_entry cmd_table[] =
     {"coap_client", cmd_coap_client},
     {"coap_server", cmd_coap_server},
 #endif
-#ifdef CONFIG_FATFS_SUPPORT
-    {"fatfs", cmd_fatfs},
-#endif
 #ifdef CONFIG_LWIP_SOCKETS_TEST
     {"socket_client", cmd_lwip_sockets_client},
     {"socket_server", cmd_lwip_sockets_server},
@@ -1934,6 +1994,7 @@ static const struct cmd_entry cmd_table[] =
 #if NVDS_FLASH_SUPPORT
     {"nvds", cmd_nvds_handle},
 #endif /* NVDS_FLASH_SUPPORT */
+    {"image_switch", cmd_image_switch},
 #endif /* CONFIG_BASECMD */
 
     {"", NULL}
@@ -2035,7 +2096,7 @@ static int parse_cmd(char *buf, char **argv)
 
 static void cmd_common_help(void)
 {
-#if (!defined(CONFIG_RF_TEST_SUPPORT)) && defined(CONFIG_BASECMD)
+#ifdef CONFIG_BASECMD
     uint8_t i;
     for (i = 0; cmd_table[i].function != NULL; i++) {
         app_print("\t%s\n", cmd_table[i].command);

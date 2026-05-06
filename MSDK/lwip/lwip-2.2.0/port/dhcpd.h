@@ -61,13 +61,16 @@ struct dhcpd
 struct server_config_t
 {
     struct in_addr  server;
+
+    struct in_addr  dns_server;
+
     struct in_addr  mask;
     struct in_addr  start;
     struct in_addr  end;
 
     char *interface;        /* The name of the interface to use */
     uint8_t arp[6];         /* Our arp address */
-    uint32_t lease;         /* lease time in seconds (host order) */
+    uint32_t lease_time;    /* lease time in seconds (host order) */
     uint32_t max_leases;    /* maximum number of leases (including reserved address) */
     uint32_t auto_time;     /* how long should udhcpd wait before writing a config file if this is zero, it will only write one on SIGUSR1 */
     uint32_t decline_time;  /* how long an address is reserved if a client returns a decline message */
@@ -85,5 +88,7 @@ int stop_dhcpd_daemon(struct netif *net_if);
 uint8_t dhcp_process(void *packet_addr);
 void dhcpd_delete_ipaddr_by_macaddr(uint8_t *mac_addr);
 uint32_t dhcpd_find_ipaddr_by_macaddr(uint8_t *mac_addr);
+int dhcpd_set_ip_range(uint32_t start_ip, uint32_t end_ip, uint32_t lease_time);
+void dhcpd_set_dns_server(uint32_t dns_ip);
 
 #endif /* DHCPD_H_ */
