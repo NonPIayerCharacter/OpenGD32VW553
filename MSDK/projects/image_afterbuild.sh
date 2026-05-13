@@ -60,9 +60,9 @@ fi
 
 # find RE_MBL_OFFSET defined in CONFIG_FILE
 
-mbl_offset=$(awk '$2=="RE_MBL_OFFSET" {print $3}' ${CONFIG_FILE} )
-image0_offset=$(awk '$2=="RE_IMG_0_OFFSET" {print $3}' ${CONFIG_FILE} )
-image1_offset=$(awk '$2=="RE_IMG_1_OFFSET" {print $3}' ${CONFIG_FILE} )
+mbl_offset=$(awk '$2=="RE_MBL_OFFSET" {print $3}' ${CONFIG_FILE} | tr -d '[:space:]')
+image0_offset=$(awk '$2=="RE_IMG_0_OFFSET" {print $3}' ${CONFIG_FILE} | tr -d '[:space:]')
+image1_offset=$(awk '$2=="RE_IMG_1_OFFSET" {print $3}' ${CONFIG_FILE} | tr -d '[:space:]')
 echo mbl_offset=${mbl_offset} image0_offset=${image0_offset} image1_offset=${image1_offset}
 
 rftest_on=$(cat ${ROOT}/MSDK/app/rftest_cfg.h | grep -c -E "^\#define CONFIG_RF_TEST_SUPPORT" )
