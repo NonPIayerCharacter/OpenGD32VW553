@@ -49,8 +49,8 @@ OF SUCH DAMAGE.
 #define RE_SYS_STATUS_OFFSET    0x8000          /* !Keep unchanged! */
 #define RE_IMG_0_OFFSET         0xA000          /* !Keep unchanged! */
 #define RE_IMG_1_OFFSET         0x1EA000
-#define RE_IMG_1_END            0x3CA000        /* reserved 156KB for user data */
-#define RE_NVDS_DATA_OFFSET     0x3F1000        /* reserved 60KB for nvds data */
+#define RE_IMG_1_END            0x3CA000        /* reserved 160KB for user data */
+#define RE_NVDS_DATA_OFFSET     0x3F2000        /* reserved 56KB for nvds data */
 #define RE_END_OFFSET           0x400000        /* equal to flash total size */
 
 /* FW_VERSION */
