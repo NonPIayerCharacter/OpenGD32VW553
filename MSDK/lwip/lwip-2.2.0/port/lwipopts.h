@@ -101,12 +101,12 @@ extern "C" {
 #define IP_REASS_MAX_PBUFS            (MACIF_RX_BUF_CNT - 2)
 
 #define MEMP_NUM_NETBUF               34
-#define MEMP_NUM_NETCONN              12 // 10 // 8
+#define MEMP_NUM_NETCONN              16 // 12 // 10 // 8
 
 #define MEMP_NUM_UDP_PCB              16
 #define MEMP_NUM_REASSDATA            LWIP_MIN((IP_REASS_MAX_PBUFS), 5)
 
-#define MEMP_NUM_TCP_PCB              6 //5//
+#define MEMP_NUM_TCP_PCB              8 //5//
 
 #if CFG_TXDESC0 > CFG_TXDESC1
 #define MAC_TXQ_DEPTH_0_1             CFG_TXDESC0
