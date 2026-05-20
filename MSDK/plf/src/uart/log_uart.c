@@ -38,20 +38,23 @@ OF SUCH DAMAGE.
 #include "log_uart.h"
 
 #ifdef LOG_UART
+
+uint32_t log_uart_periph = LOG_UART;
+
 #if defined(__ARMCC_VERSION)
 /* retarget the C library printf function to the USART */
 int fputc(int ch, FILE *f)
 {
-    while (RESET == usart_flag_get(LOG_UART, USART_FLAG_TBE));
-    usart_data_transmit(LOG_UART, (uint8_t)ch);
+    while (RESET == usart_flag_get(log_uart_periph, USART_FLAG_TBE));
+    usart_data_transmit(log_uart_periph, (uint8_t)ch);
     return ch;
 }
 #elif defined(__ICCARM__)
 int putchar(int ch)
 {
     /* Send byte to USART */
-    while (RESET == usart_flag_get(LOG_UART, USART_FLAG_TBE));
-    usart_data_transmit(LOG_UART, (uint8_t)ch);
+    while (RESET == usart_flag_get(log_uart_periph, USART_FLAG_TBE));
+    usart_data_transmit(log_uart_periph, (uint8_t)ch);
     /* Return character written */
     return ch;
 }
@@ -63,13 +66,13 @@ int _write(int fd, char *str, int len)
 
     /* Send string and return the number of characters written */
     while (i != len) {
-        while (RESET == usart_flag_get(LOG_UART, USART_FLAG_TBE));
-        usart_data_transmit(LOG_UART, *str);
+        while (RESET == usart_flag_get(log_uart_periph, USART_FLAG_TBE));
+        usart_data_transmit(log_uart_periph, *str);
         str++;
         i++;
     }
 
-    while (RESET == usart_flag_get(LOG_UART, USART_FLAG_TC));
+    while (RESET == usart_flag_get(log_uart_periph, USART_FLAG_TC));
 
     return i;
 }
@@ -77,34 +80,47 @@ int _write(int fd, char *str, int len)
 
 void log_uart_init(void)
 {
-    uart_config(LOG_UART, DEFAULT_LOG_BAUDRATE, false, false, false);
+    uart_config(log_uart_periph, DEFAULT_LOG_BAUDRATE, false, false, false);
 }
 
 void log_uart_putc_noint(uint8_t c)
 {
-    while (RESET == usart_flag_get(LOG_UART, USART_FLAG_TBE));
-    usart_data_transmit(LOG_UART, (uint8_t)c);
+    while (RESET == usart_flag_get(log_uart_periph, USART_FLAG_TBE));
+    usart_data_transmit(log_uart_periph, (uint8_t)c);
 }
 
 void log_uart_put_data(const uint8_t *d, int size)
 {
-    uart_put_data(LOG_UART, d, size);
+    uart_put_data(log_uart_periph, d, size);
 }
 
 char log_uart_getc(void)
 {
     char ch;
     while (1) {
-        if (RESET != usart_flag_get(LOG_UART, USART_FLAG_ORERR)) {
-            usart_flag_clear(LOG_UART, USART_FLAG_ORERR);
+        if (RESET != usart_flag_get(log_uart_periph, USART_FLAG_ORERR)) {
+            usart_flag_clear(log_uart_periph, USART_FLAG_ORERR);
         }
 
-        if ((RESET != usart_flag_get(LOG_UART, USART_FLAG_RBNE))) {
-            ch = (char)usart_data_receive(LOG_UART);
+        if ((RESET != usart_flag_get(log_uart_periph, USART_FLAG_RBNE))) {
+            ch = (char)usart_data_receive(log_uart_periph);
             return ch;
         }
     }
 }
+
+void log_uart_change(uint32_t periph)
+{
+    switch(periph)
+    {
+        case USART0:
+        case UART1:
+        case UART2:
+            log_uart_periph = periph;
+        default: return;
+    }
+}
+
 #else /* LOG_UART */
 #if defined(__ARMCC_VERSION)
 /* retarget the C library printf function to the USART */
