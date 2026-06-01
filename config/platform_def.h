@@ -79,7 +79,7 @@ OF SUCH DAMAGE.
 
 // Wireless mode
 #define CFG_WLAN_SUPPORT
-//#define CFG_BLE_SUPPORT
+#define CFG_BLE_SUPPORT
 #if defined(CFG_WLAN_SUPPORT) && defined(CFG_BLE_SUPPORT)
   #define CFG_COEX
 #endif
